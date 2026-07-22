@@ -24,7 +24,7 @@ jobs:
         run: node scripts/backup/backup-appdeploy.mjs
       - name: Store encrypted-at-rest workflow artifact
         if: ${{ hashFiles('backups/*.json') != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: appdeploy-backup-${{ github.run_id }}
           path: backups/*.json
