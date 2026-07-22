@@ -1,0 +1,10 @@
+{
+  "app_name": "مرصد تسعة Pro",
+  "app_id": "441a4987f6936b832e",
+  "source_version": "1784740090380",
+  "exported_at": "2026-07-22",
+  "runtime": "AppDeploy frontend+backend",
+  "frontend": "React 19 + Vite + Tailwind CSS",
+  "backend": "AppDeploy SDK",
+  "notes": "GitHub-ready source archive. Full backend runtime requires AppDeploy SDK or a separate migration adapter."
+}

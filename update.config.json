@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "branch": "main",
+  "remote": "origin",
+  "backupTagPrefix": "backup",
+  "checks": [
+    "npm run typecheck"
+  ],
+  "autoDeploy": "vercel-git-integration",
+  "protected": [
+    ".env",
+    ".env.local",
+    "secrets",
+    "credentials"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "methods": ["google", "apple", "x"],
+  "style": {
+    "mode": "dark",
+    "accentColor": "#73E7FF",
+    "backgroundColor": "#05070B",
+    "panelColor": "#0A0E15",
+    "textColor": "#F7FBFF",
+    "fontFamily": "Noto Sans Arabic, sans-serif",
+    "borderRadius": 18
+  }
+}
