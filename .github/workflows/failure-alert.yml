@@ -1,0 +1,45 @@
+name: Workflow failure alert
+
+on:
+  workflow_run:
+    workflows:
+      - Quality gate
+      - Social publish
+      - Weekly product report
+      - Monthly SEO and Lighthouse audit
+      - Daily AppDeploy backup
+    types: [completed]
+
+permissions:
+  issues: write
+  actions: read
+
+jobs:
+  alert:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const title = `🚨 فشل تشغيل: ${run.name}`;
+            const body = [
+              `فشل Workflow **${run.name}**.`,
+              `- الفرع: \`${run.head_branch}\``,
+              `- Commit: \`${run.head_sha}\``,
+              `- وقت التشغيل: ${run.updated_at}`,
+              `- السجلات: ${run.html_url}`
+            ].join('\n');
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const match = existing.data.find(issue => issue.title === title);
+            if (match) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: match.number, body });
+            } else {
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body });
+            }

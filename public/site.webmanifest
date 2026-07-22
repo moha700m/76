@@ -1,0 +1,11 @@
+{
+  "name": "مرصد تسعة Pro",
+  "short_name": "مرصد تسعة",
+  "lang": "ar-SA",
+  "dir": "rtl",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05070B",
+  "theme_color": "#05070B",
+  "description": "استوديو عربي للوكلاء وتصميم المواقع"
+}

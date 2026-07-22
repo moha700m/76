@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://marsad-tisaa-pro.vercel.app/sitemap.xml

@@ -1,0 +1,47 @@
+name: Social publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Trigger source
+        required: false
+        default: manual
+
+permissions:
+  contents: write
+
+concurrency:
+  group: social-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Validate pending content
+        run: node scripts/social/validate-content.mjs
+      - name: Publish due and approved content through Vercel
+        env:
+          SOCIAL_PUBLISH_ENDPOINT: ${{ secrets.SOCIAL_PUBLISH_ENDPOINT }}
+          SOCIAL_PUBLISH_ADMIN_TOKEN: ${{ secrets.SOCIAL_PUBLISH_ADMIN_TOKEN }}
+          SOCIAL_PUBLISH_MODE: ${{ vars.SOCIAL_PUBLISH_MODE || 'dry-run' }}
+        run: node scripts/social/dispatcher.mjs
+      - name: Save publishing results
+        run: |
+          if git diff --quiet -- content/pending-uploads; then
+            echo "No publishing state changes"
+            exit 0
+          fi
+          git config user.name "marsad-tisaa-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add content/pending-uploads
+          git commit -m "chore(content): save social publishing results"
+          git push

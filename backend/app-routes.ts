@@ -1,5 +1,5 @@
-import { randomUUID } from 'crypto';
-import { ai, db, error, json, requireAuth, storage, type RouterRoutes } from '@appdeploy/sdk';
+import { randomUUID, timingSafeEqual } from 'crypto';
+import { ai, db, error, json, requireAuth, secrets, storage, type RouterRoutes } from '@appdeploy/sdk';
 import { notifySubscribers } from './realtime-subscribers';
 import { calculateScore, DESIGN_AGENTS, runDesignAgent, synthesizeDesign, type AgentOutput, type ProjectContext, type ThinkingMode } from './design-agents';
 import { buildDemoPreview, generateSitePreview, htmlResponse } from './site-preview';
@@ -22,6 +22,23 @@ type RunRecord = {
 const PROJECTS = 'design_projects';
 const RUNS = 'design_runs';
 const MEMORIES = 'design_memories';
+
+function safeTokenEqual(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+async function listAllRecords<T>(table: string) {
+  const items: Array<Omit<T, 'id'> & { id: string }> = [];
+  let nextToken: string | undefined;
+  do {
+    const page = await db.list<T>(table, { nextToken, limit: 1000 });
+    items.push(...page.items);
+    nextToken = page.nextToken;
+  } while (nextToken && items.length < 20000);
+  return items;
+}
 
 function modeToThinking(mode: ProjectRecord['mode']): ThinkingMode { return mode === 'deep' ? 'DEEP' : 'FAST'; }
 
@@ -98,6 +115,26 @@ async function finalizeProject(id: string, project: ProjectRecord) {
 }
 
 export const appRoutes: RouterRoutes = {
+  'GET /api/admin/backup': [async ctx => {
+    let expected = '';
+    try { expected = await secrets.readSecret('BACKUP_TOKEN'); }
+    catch { return error('خدمة النسخ الاحتياطي غير مفعلة', 503); }
+    const headers = (ctx.event?.headers || {}) as Record<string, string | undefined>;
+    const provided = headers['x-backup-token'] || headers['X-Backup-Token'] || '';
+    if (!provided || !safeTokenEqual(provided, expected)) return error('غير مصرح', 401);
+    const [projects, runs, memories] = await Promise.all([
+      listAllRecords<ProjectRecord>(PROJECTS),
+      listAllRecords<RunRecord>(RUNS),
+      listAllRecords<Record<string, unknown>>(MEMORIES)
+    ]);
+    return json({
+      version: 1,
+      app: 'marsad-tisaa-pro',
+      exportedAt: new Date().toISOString(),
+      counts: { projects: projects.length, runs: runs.length, memories: memories.length },
+      data: { projects, runs, memories }
+    });
+  }],
   'GET /api/methodology': [async () => json({ agents: DESIGN_AGENTS })],
   'GET /api/demo-preview': [async () => htmlResponse(buildDemoPreview())],
   'GET /api/public-preview/:token': [async ctx => {

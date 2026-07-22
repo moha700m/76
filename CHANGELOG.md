@@ -20,3 +20,20 @@
 - إضافة أمر رجوع آمن دون Force Push.
 - تقوية GitHub Actions ومنع ملفات الأسرار.
 - توثيق التحديث التلقائي عبر Vercel Git Integration.
+
+## 1.2.0 — Growth automation foundation
+
+- إضافة `SETUP.md` لتجهيز YouTube وTikTok وInstagram وVercel وGitHub وAppDeploy.
+- إضافة طابور محتوى آمن مع موافقة صريحة وDry Run ومنع تكرار النشر.
+- إضافة محركات رفع YouTube وTikTok وInstagram وواجهات Vercel المحمية.
+- إضافة Vercel Cron وGitHub Actions للنشر والتقارير والنسخ الاحتياطي والتدقيق والتنبيهات.
+- تفعيل Vercel Analytics وSpeed Insights داخل React.
+- إضافة SEO تقني وبيانات منظمة وrobots.txt وsitemap وWeb App Manifest.
+- نشر endpoint نسخ احتياطي محمي في AppDeploy دون تفعيل السر تلقائيًا.
+- إضافة 9 اختبارات وحدة لمسارات الموافقة والحماية وDry Run ومنع التكرار.
+- إنشاء `backlog.md` بأكثر من 20 مهمة مفتوحة مرتبة حسب الأولوية.
+
+## 2026-07-22 — Vercel/AppDeploy bridge
+- أصلح فشل Vercel في حل `@appdeploy/client`.
+- أضاف محول Vercel محليًا مع توجيه آمن إلى استوديو AppDeploy.
+- جعل معاينات Vercel تُعرض من خدمة AppDeploy الأصلية دون كشف مفاتيح أو نقل الخلفية.

@@ -16,6 +16,22 @@
 - تصدير تقرير Markdown.
 - حماية ملكية المشاريع ومسارات التخزين.
 
+
+## محرك النمو والتشغيل الآلي
+
+أضيفت طبقة مستقلة وآمنة فوق الاستوديو الهجين تشمل:
+
+- طابور محتوى قابل للمراجعة داخل `content/pending-uploads/`.
+- رفع YouTube وInstagram Reels وTikTok Draft/Direct مع Dry Run افتراضي.
+- Endpoints محمية في Vercel للنشر ومتابعة الحالة.
+- Vercel Cron يومي يشغّل GitHub Action بدل الاحتفاظ بالمحتوى داخل الدالة.
+- فحص تلقائي لكل Push، Dependabot أسبوعي، تقرير أسبوعي، Lighthouse شهري، نسخة AppDeploy يومية، وتنبيه Issues عند فشل أي Workflow.
+- Vercel Web Analytics وSpeed Insights داخل تطبيق React.
+- ملف `backlog.md` يحافظ على 20 مهمة مفتوحة على الأقل.
+- دليل مفاتيح وربط كامل في [SETUP.md](./SETUP.md).
+
+الوضع الافتراضي للنشر الاجتماعي هو `dry-run`. لا يتحول إلى نشر فعلي إلا عبر متغيرات الخادم وبعد اعتماد ملف المحتوى.
+
 ## البنية
 
 ```text
@@ -67,7 +83,7 @@ git push -u origin main
 ## النسخة الحية المرجعية
 
 - AppDeploy app id: `441a4987f6936b832e`
-- Source snapshot: `1784740090380`
+- Source snapshot المرجعي: `1784748360165`
 
 لا تضع مفاتيح أو رموز تحقق داخل المستودع. استخدم مدير الأسرار في منصة النشر.
 

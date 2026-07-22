@@ -16,18 +16,25 @@ concurrency:
 jobs:
   source-checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
-          cache: npm
+          node-version: 22
       - run: npm install --ignore-scripts
+      - run: npm run content:validate
       - run: npm run check
-      - name: Reject committed environment files
+      - name: Reject committed environment and credential files
         run: |
-          if git ls-files | grep -E '(^|/)(\.env($|\.)|credentials|secrets)' ; then
+          if git ls-files | grep -E '(^|/)(\.env($|\.)|credentials|secrets)' | grep -v '^\.env\.example$'; then
             echo "Sensitive file name detected"
             exit 1
           fi
+      - name: Upload production build
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build
+          path: dist
+          if-no-files-found: error
+          retention-days: 7

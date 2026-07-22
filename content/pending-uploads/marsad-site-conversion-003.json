@@ -1,0 +1,85 @@
+{
+  "status": "draft",
+  "approvedAt": null,
+  "platforms": [
+    "youtube",
+    "instagram",
+    "tiktok"
+  ],
+  "isAigc": true,
+  "platformSettings": {
+    "youtube": {
+      "privacyStatus": "private",
+      "categoryId": "28",
+      "madeForKids": false
+    },
+    "instagram": {
+      "shareToFeed": true
+    },
+    "tiktok": {
+      "mode": "draft",
+      "privacyLevel": "SELF_ONLY",
+      "userApproved": false,
+      "disableDuet": false,
+      "disableComment": false,
+      "disableStitch": false,
+      "brandOrganic": true
+    }
+  },
+  "results": {
+    "youtube": {
+      "status": "validated",
+      "provider": "youtube",
+      "privacyStatus": "private",
+      "updatedAt": "2026-07-22T19:39:12.986Z"
+    },
+    "instagram": {
+      "status": "validated",
+      "provider": "instagram",
+      "shareToFeed": true,
+      "updatedAt": "2026-07-22T19:39:12.986Z"
+    },
+    "tiktok": {
+      "status": "validated",
+      "provider": "tiktok",
+      "mode": "draft",
+      "privacyLevel": "SELF_ONLY",
+      "updatedAt": "2026-07-22T19:39:12.986Z"
+    }
+  },
+  "createdAt": "2026-07-22T19:00:00.000Z",
+  "id": "marsad-site-conversion-003",
+  "scheduledAt": "2026-07-26T19:00:00+03:00",
+  "videoUrl": "https://YOUR-VERIFIED-CDN.example/videos/marsad-site-conversion-003.mp4",
+  "title": "ليش موقعك ما يقنع العميل؟",
+  "description": "المشكلة غالبًا مو في اللون أو الصورة لحالها. الوضوح، ترتيب الرحلة، الثقة، سرعة القرار، والجوال كلها تفرق. 9 تخصصات تراجع المشروع وتطلع لك الأولويات قبل التنفيذ.",
+  "tags": [
+    "تحسين المواقع",
+    "تحويل العملاء",
+    "UX",
+    "UI",
+    "تسويق رقمي",
+    "السعودية"
+  ],
+  "thumbnailPath": "content/pending-uploads/assets/thumb-03-why-site-fails.png",
+  "thumbnailBrief": {
+    "format": "9:16",
+    "headline": "ليش موقعك ما يقنع العميل؟",
+    "visualDirection": "شبكة وكلاء وتحليل تجربة المستخدم مع سؤال بصري قوي"
+  },
+  "script": {
+    "durationSec": 24,
+    "hook": "موقعك شكله حلو… لكن ليش العميل يطلع بدون ما يتواصل؟",
+    "scenes": [
+      "0-4ث: سؤال على الشاشة",
+      "4-10ث: وكيل UX والباحث والناقد",
+      "10-16ث: قائمة مخاطر ومعايير قبول",
+      "16-21ث: قبل وبعد في بنية الصفحة",
+      "21-24ث: CTA"
+    ],
+    "voiceover": "المشكلة مو دايم في الألوان. ممكن الرسالة مبهمة أو الرحلة طويلة أو الثقة جاية متأخرة. مرصد تسعة يجمع تسعة تخصصات ويطلع لك وش تصلح أول قبل ما تدفع على تطوير عشوائي.",
+    "cta": "افتح المثال وشوف طريقة التحليل"
+  },
+  "updatedAt": "2026-07-22T19:39:12.986Z",
+  "dryRunAt": "2026-07-22T19:39:12.986Z"
+}

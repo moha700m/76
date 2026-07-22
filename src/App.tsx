@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import PreviewPage from './PreviewPage';
 import Studio from './Studio';
 
@@ -16,7 +18,13 @@ function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  return previewToken ? <PreviewPage token={previewToken} /> : <Studio />;
+  return (
+    <>
+      {previewToken ? <PreviewPage token={previewToken} /> : <Studio />}
+      <Analytics />
+      <SpeedInsights sampleRate={0.5} />
+    </>
+  );
 }
 
 export default App;

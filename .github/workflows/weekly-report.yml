@@ -1,0 +1,34 @@
+name: Weekly product report
+
+on:
+  schedule:
+    - cron: '0 6 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node scripts/reports/weekly.mjs
+      - name: Commit weekly report
+        run: |
+          if git diff --quiet -- reports/weekly; then exit 0; fi
+          git config user.name "marsad-tisaa-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/weekly
+          git commit -m "docs(report): weekly product metrics"
+          git push

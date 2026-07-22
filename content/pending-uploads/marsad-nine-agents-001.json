@@ -1,0 +1,84 @@
+{
+  "status": "draft",
+  "approvedAt": null,
+  "platforms": [
+    "youtube",
+    "instagram",
+    "tiktok"
+  ],
+  "isAigc": true,
+  "platformSettings": {
+    "youtube": {
+      "privacyStatus": "private",
+      "categoryId": "28",
+      "madeForKids": false
+    },
+    "instagram": {
+      "shareToFeed": true
+    },
+    "tiktok": {
+      "mode": "draft",
+      "privacyLevel": "SELF_ONLY",
+      "userApproved": false,
+      "disableDuet": false,
+      "disableComment": false,
+      "disableStitch": false,
+      "brandOrganic": true
+    }
+  },
+  "results": {
+    "youtube": {
+      "status": "validated",
+      "provider": "youtube",
+      "privacyStatus": "private",
+      "updatedAt": "2026-07-22T19:39:12.985Z"
+    },
+    "instagram": {
+      "status": "validated",
+      "provider": "instagram",
+      "shareToFeed": true,
+      "updatedAt": "2026-07-22T19:39:12.985Z"
+    },
+    "tiktok": {
+      "status": "validated",
+      "provider": "tiktok",
+      "mode": "draft",
+      "privacyLevel": "SELF_ONLY",
+      "updatedAt": "2026-07-22T19:39:12.985Z"
+    }
+  },
+  "createdAt": "2026-07-22T19:00:00.000Z",
+  "id": "marsad-nine-agents-001",
+  "scheduledAt": "2026-07-24T19:00:00+03:00",
+  "videoUrl": "https://YOUR-VERIFIED-CDN.example/videos/marsad-nine-agents-001.mp4",
+  "title": "9 وكلاء يشتغلون على موقعك قدامك",
+  "description": "تكتب فكرة مشروعك، وبعدها تشوف 9 وكلاء متخصصين يحللون الموجز ويرتبون تجربة المستخدم والواجهة والجودة لين تطلع لك معاينة موقع جاهزة للمشاركة.\n\nمرصد تسعة Pro — من الفكرة إلى رابط فعلي.",
+  "tags": [
+    "ذكاء اصطناعي",
+    "تصميم مواقع",
+    "وكلاء ذكاء اصطناعي",
+    "مشاريع سعودية",
+    "UI UX"
+  ],
+  "thumbnailPath": "content/pending-uploads/assets/thumb-01-nine-agents.png",
+  "thumbnailBrief": {
+    "format": "9:16",
+    "headline": "9 وكلاء يشتغلون على موقعك",
+    "visualDirection": "شبكة 3x3 للوكلاء وهوية حبرية داكنة وسماوية"
+  },
+  "script": {
+    "durationSec": 22,
+    "hook": "تخيل تسعة متخصصين يشتغلون على موقعك بنفس اللحظة.",
+    "scenes": [
+      "0-3ث: لقطة Hero مع العنوان",
+      "3-9ث: شبكة الوكلاء 3x3 وحالة كل وكيل",
+      "9-15ث: الدرجة والقرارات النهائية",
+      "15-20ث: تبديل معاينة الكمبيوتر والجوال",
+      "20-22ث: CTA افتح المثال الحي"
+    ],
+    "voiceover": "تكتب فكرتك وبس. تسعة وكلاء يحللون المشروع من الموجز إلى تجربة المستخدم والواجهة والجودة، وبعدها يطلعون لك رابط معاينة تفتحه على الجوال والكمبيوتر.",
+    "cta": "شوف المثال الحي وابدأ مشروعك الحين"
+  },
+  "updatedAt": "2026-07-22T19:39:12.985Z",
+  "dryRunAt": "2026-07-22T19:39:12.985Z"
+}
