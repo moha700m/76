@@ -6,7 +6,7 @@
     "backgroundColor": "#05070B",
     "panelColor": "#0A0E15",
     "textColor": "#F7FBFF",
-    "fontFamily": "Noto Sans Arabic, sans-serif",
+    "fontFamily": "Cairo, Noto Sans Arabic, sans-serif",
     "borderRadius": 18
   }
 }

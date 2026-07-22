@@ -38,6 +38,14 @@ const AGENTS = [
 ] as const;
 
 const icons = [FileText, Search, Layers3, Brain, UserCheck, Bot, Gauge, ShieldCheck, Zap];
+const APPDEPLOY_STUDIO_URL = 'https://441a4987f6936b832e.v2.appdeploy.ai/';
+
+function isAppDeployHost() { return window.location.hostname.endsWith('.appdeploy.ai'); }
+function openAppDeployStudio() {
+  const target = new URL(APPDEPLOY_STUDIO_URL);
+  target.searchParams.set('start', '1');
+  window.location.assign(target.toString());
+}
 
 const demoOutputs: AgentOutput[] = AGENTS.map((agent, index) => ({
   agentId: agent[0], name: agent[1], title: 'مخرج متخصص', workshop: agent[2], status: 'complete',
@@ -93,10 +101,13 @@ function Studio() {
   useEffect(() => {
     Promise.all([auth.getUser(), api.get('/api/methodology')])
       .then(([current, method]) => {
+        const startRequested = new URLSearchParams(window.location.search).get('start') === '1';
+        if (startRequested) window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
         setUser(current); setMethodology(method.data.agents || []);
-        if (current) { setView('dashboard'); void loadProjects(); }
+        if (current) { setView(startRequested ? 'new' : 'dashboard'); void loadProjects(); }
+        else if (startRequested) setErrorText('وصلت للاستوديو الصحيح. سجّل دخولك وكمل مشروعك من هنا.');
       })
-      .catch(() => setErrorText('تعذر تحميل التطبيق.'))
+      .catch(() => setErrorText('ما قدرنا نحمّل التطبيق الحين. جرّب مرة ثانية.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -132,8 +143,9 @@ function Studio() {
   }
 
   async function signIn() {
+    if (!isAppDeployHost()) { openAppDeployStudio(); return; }
     try { const result = await auth.signIn({ scope: 'openid email profile offline_access' }); setUser(result.user); setView('dashboard'); await loadProjects(); }
-    catch { setErrorText('تعذر تسجيل الدخول. اسمح بالنوافذ المنبثقة ثم أعد المحاولة.'); }
+    catch { setErrorText('ما قدرنا نسجّل دخولك. اسمح بالنوافذ المنبثقة وجرّب مرة ثانية.'); }
   }
 
   async function signOut() { await auth.signOut(); setUser(null); setProjects([]); setSelected(null); setView('landing'); }
@@ -142,7 +154,7 @@ function Studio() {
   async function createProject(event: FormEvent) {
     event.preventDefault();
     if (!user) return void signIn();
-    if (!form.name.trim() || !form.brief.trim()) return setErrorText('اسم المشروع والموجز مطلوبان.');
+    if (!form.name.trim() || !form.brief.trim()) return setErrorText('اكتب اسم المشروع وفكرته الأساسية عشان نبدأ.');
     setBusy(true); setErrorText('');
     try {
       const response = await api.post('/api/projects', { ...form, references: form.references.split('\n').map(v => v.trim()).filter(Boolean) });
@@ -196,7 +208,7 @@ function Studio() {
 
 function Landing({ user, onSignIn, onDashboard, onDemo, onSources }: { user: AuthUser | null; onSignIn: () => void; onDashboard: () => void; onDemo: () => void; onSources: () => void }) {
   return <div className="relative z-10"><header className="border-b border-[#1B2736] bg-[#05070B]/75 backdrop-blur-xl"><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4"><button onClick={onDashboard}><Brand /></button><nav className="hidden gap-7 text-sm text-white/45 md:flex"><button onClick={onSources}>المنهج</button><button onClick={onDemo}>مثال حي</button><button onClick={onDashboard}>المشاريع</button></nav><button onClick={user ? onDashboard : onSignIn} className="rounded-xl bg-[#73E7FF] px-5 py-2.5 text-sm font-bold text-[#05070B]">{user ? 'فتح الاستوديو' : 'تسجيل الدخول'}</button></div></header>
-    <section className="mx-auto grid min-h-[760px] max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2"><div><span className="inline-flex items-center gap-2 rounded-full border border-[#73E7FF]/20 bg-[#73E7FF]/[.06] px-3 py-1.5 text-xs font-semibold text-[#9AF0FF]"><Sparkles className="h-3.5 w-3.5" />9 وكلاء • موقع كامل • رابط مباشر</span><h1 className="mt-7 text-5xl font-extrabold leading-[1.15] sm:text-6xl lg:text-7xl">صمّم موقعًا عالميًا<br /><span className="bg-gradient-to-l from-[#73E7FF] to-[#B2A7FF] bg-clip-text text-transparent">خلال دقائق.</span></h1><p className="mt-7 max-w-2xl text-lg leading-8 text-[#A8B4C3]">من الموجز والبحث إلى تجربة المستخدم والواجهة والمعاينة. ترى عمل الوكلاء لحظة بلحظة، ثم تستلم رابطًا حقيقيًا قابلًا للمشاركة.</p><div className="mt-9 flex flex-col gap-3 sm:flex-row"><button onClick={user ? onDashboard : onSignIn} className="rounded-xl bg-[#73E7FF] px-7 py-3.5 font-bold text-[#05070B]">ابدأ مشروعًا الآن</button><button onClick={onDemo} className="rounded-xl border border-[#2B3B4E] bg-[#0A0E15] px-7 py-3.5 text-[#D8E3EE]">شاهد مثالًا حيًا</button></div></div>
+    <section className="mx-auto grid min-h-[760px] max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2"><div><span className="inline-flex items-center gap-2 rounded-full border border-[#73E7FF]/20 bg-[#73E7FF]/[.06] px-3 py-1.5 text-xs font-semibold text-[#9AF0FF]"><Sparkles className="h-3.5 w-3.5" />9 وكلاء • موقع كامل • رابط مباشر</span><h1 className="mt-7 text-5xl font-extrabold leading-[1.15] sm:text-6xl lg:text-7xl">خل فكرتك تصير موقع جاهز<br /><span className="bg-gradient-to-l from-[#73E7FF] to-[#B2A7FF] bg-clip-text text-transparent">خلال دقائق.</span></h1><p className="mt-7 max-w-2xl text-lg leading-8 text-[#A8B4C3]">اكتب فكرتك وبس. فريق من 9 وكلاء يحلل المشروع ويرتب تجربة المستخدم ويجهز الواجهة والمعاينة قدامك خطوة بخطوة، وبالنهاية تستلم رابط تقدر تفتحه وتشاركه.</p><div className="mt-9 flex flex-col gap-3 sm:flex-row"><button onClick={user ? onDashboard : onSignIn} className="rounded-xl bg-[#73E7FF] px-7 py-3.5 font-bold text-[#05070B]">ابدأ مشروعك الحين</button><button onClick={onDemo} className="rounded-xl border border-[#2B3B4E] bg-[#0A0E15] px-7 py-3.5 text-[#D8E3EE]">شوف مثال شغال</button></div></div>
       <div className="rounded-[2rem] border border-[#2B3B4E] bg-gradient-to-br from-[#101925] to-[#080B11] p-6 shadow-2xl"><div className="flex items-center justify-between"><span className="rounded-full bg-[#73E7FF]/10 px-3 py-1 text-[10px] font-bold text-[#73E7FF]">LIVE</span><strong>مجلس التصميم يعمل الآن</strong></div><div className="mt-5 space-y-3">{['باحث الأدلة', 'معماري التجربة', 'مخرج الواجهة', 'مراجع الجودة'].map((name, index) => <div key={name} className="flex items-center gap-3 rounded-2xl border border-[#1B2736] bg-[#0A0E15] p-4"><span className={`h-3 w-3 rounded-full ${index < 1 ? 'bg-[#4AE1A8]' : index === 1 ? 'animate-pulse bg-[#73E7FF]' : 'bg-white/15'}`} /><div className="flex-1"><strong className="block text-sm">{name}</strong><small className="text-white/30">{index < 1 ? 'مكتمل' : index === 1 ? 'يعمل الآن' : 'بانتظار الدور'}</small></div></div>)}</div><div className="mt-5 h-2 overflow-hidden rounded-full bg-[#1B2736]"><div className="agent-scan h-full w-[42%] rounded-full bg-gradient-to-l from-[#73E7FF] to-[#9D8CFF]" /></div></div>
     </section></div>;
 }
@@ -207,7 +219,7 @@ function Sidebar({ user, view, projects, open, onClose, onView, onProject, onDem
 }
 
 function Dashboard({ user, projects, onNew, onProject, onDemo, onSignIn }: any) {
-  if (!user) return <div className="mx-auto max-w-3xl py-16 text-center"><LogIn className="mx-auto h-10 w-10 text-[#73E7FF]" /><h2 className="mt-6 text-3xl font-extrabold">يلزم تسجيل الدخول</h2><p className="mt-3 text-[#768496]">لتشغيل الوكلاء وحفظ المشاريع والذاكرة.</p><div className="mt-7 flex justify-center gap-3"><button onClick={onSignIn} className="rounded-xl bg-[#73E7FF] px-6 py-3 font-bold text-[#05070B]">تسجيل الدخول</button><button onClick={onDemo} className="rounded-xl border border-[#2B3B4E] px-6 py-3">عرض التجربة</button></div></div>;
+  if (!user) return <div className="mx-auto max-w-3xl py-16 text-center"><LogIn className="mx-auto h-10 w-10 text-[#73E7FF]" /><h2 className="mt-6 text-3xl font-extrabold">سجّل دخولك وكمل من هنا</h2><p className="mt-3 text-[#768496]">عشان نشغّل الوكلاء ونحفظ مشاريعك وقراراتك.</p><div className="mt-7 flex justify-center gap-3"><button onClick={onSignIn} className="rounded-xl bg-[#73E7FF] px-6 py-3 font-bold text-[#05070B]">تسجيل الدخول</button><button onClick={onDemo} className="rounded-xl border border-[#2B3B4E] px-6 py-3">عرض التجربة</button></div></div>;
   const metrics = [['إجمالي المشاريع', projects.length], ['تعمل الآن', projects.filter((p: Project) => p.status === 'running').length], ['جاهزة للعميل', projects.filter((p: Project) => p.status === 'approved').length], ['تحتاج قرارك', projects.filter((p: Project) => p.status === 'review').length]];
   return <div className="mx-auto max-w-7xl"><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><small className="font-bold tracking-[.2em] text-[#73E7FF]/70">WORKSPACE</small><h2 className="mt-2 text-3xl font-extrabold sm:text-4xl">مرحبًا، {user.name?.split(' ')[0] || 'محمد'}.</h2><p className="mt-3 text-[#768496]">نظرة سريعة على المشاريع التي تعمل وتنتظر قرارك.</p></div><button onClick={onNew} className="rounded-xl bg-[#73E7FF] px-6 py-3 font-bold text-[#05070B]"><Plus className="ml-2 inline h-4 w-4" />مشروع جديد</button></div><div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(([label, value]) => <div key={label as string} className="rounded-2xl border border-[#1B2736] bg-[#0A0E15] p-5"><strong className="block text-3xl">{value}</strong><span className="text-xs text-[#768496]">{label}</span></div>)}</div><div className="mt-8 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{projects.length ? projects.map((project: Project) => <button key={project.id} onClick={() => onProject(project)} className="rounded-2xl border border-[#1B2736] bg-[#0A0E15] p-5 text-right hover:border-[#73E7FF]/30"><div className="flex justify-between"><span className="rounded-full bg-[#73E7FF]/10 px-3 py-1 text-[10px] text-[#73E7FF]">{project.progress}%</span><ArrowLeft className="h-4 w-4 text-white/20" /></div><h3 className="mt-6 text-lg font-bold">{project.name}</h3><p className="mt-2 line-clamp-2 text-sm text-[#768496]">{project.brief}</p></button>) : <button onClick={onNew} className="rounded-[2rem] border border-dashed border-[#2B3B4E] bg-[#0A0E15] p-12 text-center"><Bot className="mx-auto h-10 w-10 text-[#73E7FF]/40" /><strong className="mt-4 block">ابدأ أول مشروع</strong></button>}</div></div>;
 }
