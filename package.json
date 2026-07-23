@@ -1,45 +1,29 @@
 {
-  "name": "nasq-ai",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test && npm run build",
-    "release": "node scripts/release.mjs",
-    "rollback": "node scripts/rollback.mjs",
-    "test": "node --test tests/unit/*.test.mjs",
-    "content:validate": "node scripts/social/validate-content.mjs",
-    "social:publish": "node scripts/social/dispatcher.mjs",
-    "report:weekly": "node scripts/reports/weekly.mjs",
-    "backup:appdeploy": "node scripts/backup/backup-appdeploy.mjs",
-    "oauth:youtube": "node scripts/oauth/youtube-oauth.mjs",
-    "oauth:tiktok": "node scripts/oauth/tiktok-oauth.mjs"
-  },
-  "dependencies": {
-    "lucide-react": "^1.25.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0"
-  },
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.0.0"
-  },
-  "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "autoprefixer": "^10.4.0",
-    "postcss": "^8.4.0",
-    "tailwindcss": "^3.4.0",
-    "typescript": "^5.7.0",
-    "vite": "^6.0.0"
-  },
-  "engines": {
-    "node": "22.x"
-  }
+    "name": "vite-react-app",
+    "private": true,
+    "version": "0.0.1",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "lucide-react": "^0.469.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0"
+    },
+    "optionalDependencies": {
+        "@rollup/rollup-linux-x64-gnu": "^4.0.0"
+    },
+    "devDependencies": {
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^4.3.0",
+        "autoprefixer": "^10.4.0",
+        "postcss": "^8.4.0",
+        "tailwindcss": "^3.4.0",
+        "typescript": "^5.7.0",
+        "vite": "^6.0.0"
+    }
 }
