@@ -1,0 +1,87 @@
+name: Autopilot guards and auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  guards:
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'auto/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: حارس حجم التغيير
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          LINES=$(git diff --numstat "$BASE"...HEAD | awk '{a+=$1; d+=$2} END {print a+d+0}')
+          echo "الأسطر المتغيرة: $LINES"
+          if [ "$LINES" -gt 800 ]; then
+            echo "::error::PR أكبر من 800 سطر — يحتاج مراجعة بشرية"
+            exit 1
+          fi
+
+      - name: حارس الملفات المحظورة
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          if git diff --name-only "$BASE"...HEAD | grep -E '^\.github/|^AGENTS\.md$|^update\.config\.json$|^scripts/notify\.sh$|^package(-lock)?\.json$|(^|/)\.env'; then
+            echo "::error::الـPR يعدّل ملفات محظورة على الأوتوبايلوت"
+            exit 1
+          fi
+
+      - name: حارس وضع النشر الاجتماعي
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          if git diff "$BASE"...HEAD | grep -E '^\+.*SOCIAL_PUBLISH_MODE.*live'; then
+            echo "::error::محاولة تحويل النشر إلى live — مرفوضة"
+            exit 1
+          fi
+
+      - name: حارس تحديث الذاكرة والخطة
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          FILES=$(git diff --name-only "$BASE"...HEAD)
+          grep -q '^\.agent/JOURNAL\.md$' <<< "$FILES" \
+            || { echo "::error::PR بدون تحديث .agent/JOURNAL.md"; exit 1; }
+          grep -q '^\.agent/STATE\.md$' <<< "$FILES" \
+            || { echo "::error::PR بدون تحديث .agent/STATE.md"; exit 1; }
+          grep -q '^backlog\.md$' <<< "$FILES" \
+            || { echo "::error::PR بدون تحديث backlog.md"; exit 1; }
+
+      - name: تفعيل الدمج التلقائي بعد نجاح Quality gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+  notify:
+    needs: guards
+    if: always() && startsWith(github.head_ref, 'auto/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: إشعار من نسخة موثوقة
+        env:
+          GUARDS_RESULT: ${{ needs.guards.result }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "$GUARDS_RESULT" = 'success' ]; then
+            bash scripts/notify.sh "✅ ${PR_TITLE}%0A${PR_URL}"
+          else
+            bash scripts/notify.sh "⚠️ PR آلي انرفض من الحرّاس%0A${PR_URL}"
+          fi

@@ -1,0 +1,52 @@
+name: Production health probe
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: فحص الصفحة الرئيسية و /api/health
+        id: ping
+        env:
+          URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::error::متغير PRODUCTION_URL غير مضبوط"
+            exit 1
+          fi
+          ROOT=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$URL" || echo 000)
+          API=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$URL/api/health" || echo 000)
+          echo "root=$ROOT api=$API"
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "api=$API" >> "$GITHUB_OUTPUT"
+          [ "$ROOT" = "200" ] && [ "$API" = "200" ]
+
+      - name: تصعيد فوري بدون تكرار Issues
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_MESSAGE: "🚨 P0 — الإنتاج لا يستجيب%0Aالصفحة: ${{ steps.ping.outputs.root }} | api/health: ${{ steps.ping.outputs.api }}%0A${{ vars.PRODUCTION_URL }}%0Aارجع لآخر نسخة شغالة من Vercel."
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          bash scripts/notify.sh "$ALERT_MESSAGE"
+          TITLE='[P0] الإنتاج لا يستجيب'
+          BODY="فحص تلقائي: الصفحة ${{ steps.ping.outputs.root }} و /api/health ${{ steps.ping.outputs.api }}. راجع آخر نشر في Vercel."
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
