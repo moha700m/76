@@ -6,7 +6,7 @@ const html = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <title>رجعنا من منصة النشر — مرصد تسعة</title>
+  <title>رجعنا من منصة النشر — نَسَق</title>
   <style>
     :root{color-scheme:dark;--bg:#05070b;--panel:#0a0e15;--line:#263649;--text:#f7fbff;--muted:#9eabba;--cyan:#73e7ff;--danger:#ff91a6}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,rgba(115,231,255,.12),transparent 38%),var(--bg);font-family:Cairo,"Noto Sans Arabic",Tahoma,sans-serif;color:var(--text)}main{width:min(660px,100%);padding:30px;border:1px solid var(--line);border-radius:24px;background:rgba(10,14,21,.94);box-shadow:0 30px 90px rgba(0,0,0,.45)}.badge{display:inline-flex;padding:6px 10px;border:1px solid rgba(115,231,255,.25);border-radius:999px;color:var(--cyan);font-size:12px}h1{margin:18px 0 10px;font-size:clamp(28px,5vw,42px);line-height:1.35}p{color:var(--muted);line-height:1.9}.box{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#070a10;word-break:break-all}.label{display:block;margin-bottom:7px;color:var(--cyan);font-size:12px}.value{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}.error{color:var(--danger)}button{width:100%;margin-top:14px;padding:13px 18px;border:0;border-radius:14px;background:var(--cyan);color:#05070b;font-weight:800;cursor:pointer}small{display:block;margin-top:16px;color:#687789;line-height:1.7}</style>
 </head>

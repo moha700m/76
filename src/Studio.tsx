@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, auth, ws, type AuthUser, type WsConnection } from '@appdeploy/client';
 import {
-  ArrowLeft, BookOpen, Bot, Brain, Check, CircleDot, Clock3, Copy, Download,
+  ArrowLeft, BookOpen, Bot, Brain, Check, Clock3, Copy, Download,
   ExternalLink, FileText, Gauge, Image, Layers3, LayoutDashboard, LogIn, LogOut,
   Menu, Monitor, Palette, Play, Plus, RefreshCw, Search, ShieldCheck, Sparkles,
   Trash2, UserCheck, X, Zap
@@ -56,7 +56,7 @@ const demoOutputs: AgentOutput[] = AGENTS.map((agent, index) => ({
 }));
 
 const demoProject: Project = {
-  id: 'demo', name: 'مرصد تسعة Pro',
+  id: 'demo', name: 'نَسَق',
   brief: 'منصة عربية تشغّل تسعة وكلاء متخصصين ثم تبني معاينة موقع حقيقية قابلة للمشاركة.',
   audience: 'أصحاب الأعمال والوكالات والمستقلون في السعودية', goal: 'تحويل الفكرة إلى قرار تصميم ورابط عرض واضح',
   style: 'تقني فاخر، حبر داكن، سماوي وبنفسجي، Mobile First', references: [], mode: 'balanced',
@@ -79,7 +79,7 @@ const demoProject: Project = {
 };
 
 function Brand() {
-  return <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-gradient-to-br from-[#73E7FF] to-[#9D8CFF] text-[#05070B]"><CircleDot className="h-5 w-5" /></span><span><strong className="block text-sm">مرصد تسعة Pro</strong><small className="text-[9px] tracking-[.16em] text-white/30">NINE AGENT STUDIO</small></span></div>;
+  return <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-gradient-to-br from-[#73E7FF] to-[#9D8CFF] text-[#05070B]"><span className="text-base font-black">ن</span></span><span><strong className="block text-sm">نَسَق</strong><small className="text-[9px] tracking-[.16em] text-white/30">NASQ AI</small></span></div>;
 }
 
 function Studio() {
@@ -194,7 +194,7 @@ function Studio() {
     {view === 'landing' ? <Landing user={user} onSignIn={signIn} onDashboard={() => setView('dashboard')} onDemo={() => openProject(demoProject)} onSources={() => setView('sources')} /> : <div className="relative z-10 flex min-h-screen">
       <Sidebar user={user} view={view} projects={projects} open={mobileMenu} onClose={() => setMobileMenu(false)} onView={setView} onProject={openProject} onDemo={() => openProject(demoProject)} onSignIn={signIn} onSignOut={signOut} />
       <section className="min-w-0 flex-1 lg:pr-72">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#1B2736] bg-[#05070B]/90 px-4 backdrop-blur-xl sm:px-7"><button onClick={() => setMobileMenu(true)} className="rounded-xl border border-[#1B2736] p-2 lg:hidden"><Menu className="h-5 w-5" /></button><div><small className="text-[9px] font-bold tracking-[.16em] text-[#73E7FF]/70">NINE AGENT STUDIO</small><h1 className="text-sm font-bold">{selected?.name || (view === 'new' ? 'مشروع جديد' : view === 'sources' ? 'مصادر المنهج' : 'لوحة المشاريع')}</h1></div><span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#73E7FF] to-[#9D8CFF] text-xs font-bold text-[#05070B]">{user?.name?.slice(0, 1) || '9'}</span></header>
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#1B2736] bg-[#05070B]/90 px-4 backdrop-blur-xl sm:px-7"><button onClick={() => setMobileMenu(true)} className="rounded-xl border border-[#1B2736] p-2 lg:hidden"><Menu className="h-5 w-5" /></button><div><small className="text-[9px] font-bold tracking-[.16em] text-[#73E7FF]/70">NASQ DESIGN STUDIO</small><h1 className="text-sm font-bold">{selected?.name || (view === 'new' ? 'مشروع جديد' : view === 'sources' ? 'مصادر المنهج' : 'لوحة المشاريع')}</h1></div><span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#73E7FF] to-[#9D8CFF] text-xs font-bold text-[#05070B]">{user?.name?.slice(0, 1) || 'ن'}</span></header>
         <div className="p-4 sm:p-7 lg:p-9">{errorText && <div className="mb-5 flex justify-between rounded-2xl border border-[#FF7A91]/25 bg-[#FF7A91]/[.07] p-4 text-sm text-[#FFD5DD]">{errorText}<button onClick={() => setErrorText('')}><X className="h-4 w-4" /></button></div>}
           {view === 'dashboard' && <Dashboard user={user} projects={projects} onNew={() => user ? setView('new') : void signIn()} onProject={openProject} onDemo={() => openProject(demoProject)} onSignIn={signIn} />}
           {view === 'new' && <NewProject form={form} setForm={setForm} busy={busy} onSubmit={createProject} />}

@@ -1,4 +1,4 @@
-# مرصد تسعة Pro
+# نَسَق | NASQ AI
 
 استوديو عربي لتشغيل **9 وكلاء ذكاء اصطناعي متخصصين** في تحليل الموجز، البحث، استراتيجية المنتج، ذاكرة العلامة، تجربة المستخدم، الواجهة، الكفاءة، الجودة والنقد المنافس. بعد انتهاء الجولة يدمج المنسق النتائج ويولّد معاينة موقع RTL متجاوبة وقابلة للمشاركة.
 
@@ -74,7 +74,7 @@ npm run typecheck
 ```bash
 git init
 git add .
-git commit -m "Initial release: Marsad Tisaa Pro"
+git commit -m "Initial release: NASQ AI"
 git branch -M main
 git remote add origin https://github.com/USERNAME/REPOSITORY.git
 git push -u origin main
