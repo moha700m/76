@@ -324,13 +324,9 @@ function Studio() {
   }
 
   async function executeAgentWaves(project: Project) {
-    let current = project;
-    for (let step = 0; step < 5; step += 1) {
-      const response = await api.post(`/api/projects/${project.id}/run-legacy`, {});
-      current = response.data.project as Project;
-      syncProject(current);
-      if (!response.data.needsContinue) return current;
-    }
+    const response = await api.post(`/api/projects/${project.id}/run`, {});
+    const current = response.data.project as Project;
+    syncProject(current);
     return current;
   }
 
@@ -696,7 +692,8 @@ function ProjectView({ project, statusLabel, busy, expandedAgent, setExpandedAge
   const finalizingStalled = project.progress === 95 && finalizingElapsed >= 15000;
   const finalizingSeconds = Math.floor(finalizingElapsed / 1000);
   const isDemo = project.id === 'demo';
-  const running = project.status === 'running';
+  const recoverablePartial = project.status === 'running' && project.agentOutputs.length > 0 && project.agentOutputs.length < 9;
+  const running = project.status === 'running' && !recoverablePartial;
   const canReview = project.status === 'review' || project.status === 'needs_revision';
   const needsFinalize = !isDemo && project.agentOutputs.length === 9 && !project.synthesis && (project.status === 'running' || project.status === 'error');
   const completeAgents = project.scoreBreakdown?.completeAgents ?? project.agentOutputs.filter(agent => agent.status === 'complete').length;
@@ -706,7 +703,7 @@ function ProjectView({ project, statusLabel, busy, expandedAgent, setExpandedAge
   const activeAgentIndex = Math.min(project.agentOutputs.length, 8);
 
   return <div className="mx-auto max-w-7xl">
-    <div className="flex flex-col justify-between gap-6 xl:flex-row xl:items-start"><div><div className="flex flex-wrap items-center gap-2"><StatusPill label={statusLabel} tone={project.status === 'approved' ? 'green' : running ? 'cyan' : project.status === 'review' ? 'amber' : 'muted'} /><span className="rounded-full border border-[#1B2736] bg-[#0A0E15] px-3 py-1 text-xs text-white/35">{project.mode === 'deep' ? 'عميق' : project.mode === 'economy' ? 'اقتصادي' : 'متوازن'}</span>{isDemo && <StatusPill label="عرض تجريبي" tone="violet" />}</div><h2 className="mt-5 text-3xl font-extrabold sm:text-4xl">{project.name}</h2><p className="mt-3 max-w-3xl leading-7 text-[#768496]">{project.brief}</p></div><div className="flex flex-wrap gap-2">{!isDemo && <button onClick={onDelete} className="rounded-xl border border-[#1B2736] bg-[#0A0E15] p-3 text-white/35 hover:border-[#FF7A91]/30 hover:text-[#FF9CAF]" aria-label="حذف المشروع"><Trash2 className="h-4 w-4" /></button>}<button onClick={onExport} disabled={!project.synthesis} className="inline-flex items-center gap-2 rounded-xl border border-[#1B2736] bg-[#0A0E15] px-4 py-3 text-sm text-white/55 disabled:opacity-30"><Download className="h-4 w-4" />تصدير التقرير</button>{needsFinalize && <button onClick={onFinalize} disabled={busy || (project.progress === 95 && !finalizingStalled)} className="inline-flex items-center gap-2 rounded-xl border border-[#FFD166]/30 bg-[#FFD166]/[.07] px-5 py-3 text-sm font-bold text-[#FFE6A3] disabled:opacity-50">{project.progress === 95 && !finalizingStalled ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{project.progress === 95 && !finalizingStalled ? 'يجري تجميع النتيجة' : 'استكمال النتيجة'}</button>}{!isDemo && <button onClick={onRun} disabled={busy || running} className="inline-flex items-center gap-2 rounded-xl bg-[#73E7FF] px-5 py-3 text-sm font-bold text-[#05070B] disabled:opacity-50">{running || busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}{project.agentOutputs.length ? 'تشغيل جولة جديدة' : 'تشغيل الوكلاء'}</button>}</div></div>
+    <div className="flex flex-col justify-between gap-6 xl:flex-row xl:items-start"><div><div className="flex flex-wrap items-center gap-2"><StatusPill label={statusLabel} tone={project.status === 'approved' ? 'green' : running ? 'cyan' : project.status === 'review' ? 'amber' : 'muted'} /><span className="rounded-full border border-[#1B2736] bg-[#0A0E15] px-3 py-1 text-xs text-white/35">{project.mode === 'deep' ? 'عميق' : project.mode === 'economy' ? 'اقتصادي' : 'متوازن'}</span>{isDemo && <StatusPill label="عرض تجريبي" tone="violet" />}</div><h2 className="mt-5 text-3xl font-extrabold sm:text-4xl">{project.name}</h2><p className="mt-3 max-w-3xl leading-7 text-[#768496]">{project.brief}</p></div><div className="flex flex-wrap gap-2">{!isDemo && <button onClick={onDelete} className="rounded-xl border border-[#1B2736] bg-[#0A0E15] p-3 text-white/35 hover:border-[#FF7A91]/30 hover:text-[#FF9CAF]" aria-label="حذف المشروع"><Trash2 className="h-4 w-4" /></button>}<button onClick={onExport} disabled={!project.synthesis} className="inline-flex items-center gap-2 rounded-xl border border-[#1B2736] bg-[#0A0E15] px-4 py-3 text-sm text-white/55 disabled:opacity-30"><Download className="h-4 w-4" />تصدير التقرير</button>{needsFinalize && <button onClick={onFinalize} disabled={busy || (project.progress === 95 && !finalizingStalled)} className="inline-flex items-center gap-2 rounded-xl border border-[#FFD166]/30 bg-[#FFD166]/[.07] px-5 py-3 text-sm font-bold text-[#FFE6A3] disabled:opacity-50">{project.progress === 95 && !finalizingStalled ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{project.progress === 95 && !finalizingStalled ? 'يجري تجميع النتيجة' : 'استكمال النتيجة'}</button>}{!isDemo && <button onClick={onRun} disabled={busy || running} className="inline-flex items-center gap-2 rounded-xl bg-[#73E7FF] px-5 py-3 text-sm font-bold text-[#05070B] disabled:opacity-50">{running || busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}{recoverablePartial ? 'استكمال التشغيل' : project.agentOutputs.length ? 'تشغيل جولة جديدة' : 'تشغيل الوكلاء'}</button>}</div></div>
 
     {project.managerBrief && <ManagerBriefPanel project={project} />}
     <section className="mt-8 overflow-hidden rounded-[2rem] border border-[#2B3B4E] bg-gradient-to-br from-[#101925] to-[#080B11] p-5 shadow-[0_30px_90px_rgba(0,0,0,.35)] sm:p-7">

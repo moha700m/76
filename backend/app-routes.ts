@@ -451,7 +451,8 @@ export const appRoutes: RouterRoutes = {
     async ctx => {
       const project = await getOwnedProject(ctx.user!.userId, ctx.params.id);
       if (!project) return error('المشروع غير موجود', 404);
-      if (project.status === 'running' && project.progress > 10) return error('هناك مجلس يعمل حاليًا', 409);
+      const legacyPartial = project.agentOutputs.length > 0 && project.agentOutputs.length < 9;
+      if (project.status === 'running' && project.currentRunId && !legacyPartial) return error('هناك مجلس يعمل حاليًا', 409);
       const now = Date.now();
       const run: RunRecord = { userId: project.userId, projectId: ctx.params.id, status: 'running', mode: project.mode, outputs: [], startedAt: now };
       const [runId] = await db.add(RUNS, [run]);
