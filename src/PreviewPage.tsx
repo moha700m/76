@@ -56,7 +56,7 @@ function PreviewPage({ token }: { token: string }) {
     </header>
     <section className="flex min-h-[calc(100vh-4rem)] items-start justify-center overflow-auto p-2 sm:p-5">
       <div className={`overflow-hidden border border-[#2B3B4E] bg-white shadow-[0_35px_100px_rgba(0,0,0,.55)] transition-all duration-500 ${device === 'mobile' ? 'mt-3 w-[390px] max-w-full rounded-[2rem]' : 'w-full max-w-[1500px] rounded-2xl'}`}>
-        <iframe src={payload.remoteUrl} srcDoc={payload.remoteUrl ? undefined : payload.html} title={payload.name || 'معاينة الموقع'} sandbox="allow-popups allow-top-navigation-by-user-activation" className="block h-[calc(100vh-7rem)] min-h-[620px] w-full border-0 bg-white" />
+        <iframe src={payload.remoteUrl} srcDoc={payload.remoteUrl ? undefined : payload.html} title={payload.name || 'معاينة الموقع'} sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-top-navigation-by-user-activation" className="block h-[calc(100vh-7rem)] min-h-[620px] w-full border-0 bg-white" />
       </div>
     </section>
   </main>;
