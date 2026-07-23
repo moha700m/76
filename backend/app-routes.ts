@@ -3,6 +3,8 @@ import { ai, db, error, json, requireAuth, secrets, storage, type RouterRoutes }
 import { notifySubscribers } from './realtime-subscribers';
 import { calculateScore, DESIGN_AGENTS, runDesignAgent, synthesizeDesign, type AgentOutput, type ProjectContext, type ThinkingMode } from './design-agents';
 import { buildDemoPreview, generateSitePreview, htmlResponse } from './site-preview';
+import { expandProjectIdea, type ManagerBrief } from './project-manager';
+import { mergeImprovedOutputs, selectImprovementIndices } from '../lib/project-quality.mjs';
 
 type ProjectRecord = {
   userId: string; name: string; brief: string; audience: string; goal: string; style: string;
@@ -11,6 +13,8 @@ type ProjectRecord = {
   progress: number; currentWave: number; currentRunId?: string; agentOutputs: AgentOutput[];
   synthesis?: Record<string, unknown>; score?: number; feedback?: string; conceptImagePath?: string;
   previewToken?: string; previewHtmlPath?: string; previewUpdatedAt?: number;
+  managerBrief?: ManagerBrief; acceptanceTarget?: number;
+  acceptanceHistory?: Array<{ at: number; before: number; after: number; rerunAgents: string[] }>;
   timeline: Array<{ at: number; label: string; detail: string }>; createdAt: number; updatedAt: number;
 };
 
@@ -85,11 +89,33 @@ async function loadMemories(userId: string) {
 
 async function buildContext(project: ProjectRecord): Promise<ProjectContext> {
   const [referenceEvidence, memories] = await Promise.all([scrapeReferences(project.references || []), loadMemories(project.userId)]);
-  return { name: project.name, brief: project.brief, audience: project.audience, goal: project.goal, style: project.style, references: project.references || [], referenceEvidence, memories, feedback: project.feedback };
+  return { name: project.name, brief: project.brief, audience: project.audience, goal: project.goal, style: project.style, references: project.references || [], referenceEvidence, memories, feedback: project.feedback, managerSummary: project.managerBrief?.summary, taskPlan: project.managerBrief?.taskPlan };
 }
 
 async function runWave(indices: number[], context: ProjectContext, previous: AgentOutput[], thinkingMode: ThinkingMode) {
   return Promise.all(indices.map(index => runDesignAgent(index, context, previous, thinkingMode)));
+}
+
+
+async function improveAcceptance(project: ProjectRecord, context: ProjectContext, outputs: AgentOutput[], thinkingMode: ThinkingMode) {
+  const target = Math.max(70, Math.min(95, project.acceptanceTarget || 85));
+  const before = calculateScore(outputs);
+  const indices = selectImprovementIndices(outputs, target, 2);
+  if (!indices.length) return { outputs, history: project.acceptanceHistory || [], improved: false, before, after: before, rerunAgents: [] as string[] };
+  const feedback = [context.feedback || '', `جولة تحسين قبول مستهدفة للوصول إلى ${target}/100. عالج نقاط الضعف والتناقضات واكتب مخرجات قابلة للتنفيذ.`].filter(Boolean).join('\n');
+  const improvedContext: ProjectContext = { ...context, feedback };
+  const replacements = await runWave(indices, improvedContext, outputs, thinkingMode);
+  const merged = mergeImprovedOutputs(outputs, replacements) as AgentOutput[];
+  const after = calculateScore(merged);
+  const rerunAgents = replacements.map(item => item.name);
+  return {
+    outputs: merged,
+    improved: after > before,
+    before,
+    after,
+    rerunAgents,
+    history: [...(project.acceptanceHistory || []), { at: Date.now(), before, after, rerunAgents }]
+  };
 }
 
 async function finalizeProject(id: string, project: ProjectRecord) {
@@ -155,6 +181,48 @@ export const appRoutes: RouterRoutes = {
     return json({ name: project.name, html: file.content });
   }],
 
+
+  'POST /api/project-manager/brief': [requireAuth(), async ctx => {
+    const body = (ctx.body || {}) as { idea?: string; mode?: ProjectRecord['mode'] };
+    const idea = String(body.idea || '').trim();
+    if (idea.length < 8) return error('اكتب فكرتك بجملة قصيرة على الأقل', 400);
+    const mode = body.mode === 'economy' || body.mode === 'deep' ? body.mode : 'balanced';
+    const managerBrief = await expandProjectIdea(idea, mode);
+    return json({ managerBrief });
+  }],
+
+  'POST /api/projects/from-idea': [requireAuth(), async ctx => {
+    const body = (ctx.body || {}) as { idea?: string; mode?: ProjectRecord['mode']; acceptanceTarget?: number };
+    const idea = String(body.idea || '').trim();
+    if (idea.length < 8) return error('اكتب فكرتك بجملة قصيرة على الأقل', 400);
+    const mode = body.mode === 'economy' || body.mode === 'deep' ? body.mode : 'balanced';
+    const managerBrief = await expandProjectIdea(idea, mode);
+    const now = Date.now();
+    const acceptanceTarget = Math.max(75, Math.min(95, Number(body.acceptanceTarget) || 85));
+    const record: ProjectRecord = {
+      userId: ctx.user!.userId,
+      name: managerBrief.name,
+      brief: managerBrief.brief,
+      audience: managerBrief.audience,
+      goal: managerBrief.goal,
+      style: managerBrief.style,
+      references: managerBrief.references,
+      mode,
+      managerBrief,
+      acceptanceTarget,
+      acceptanceHistory: [],
+      status: 'draft', progress: 0, currentWave: 0, agentOutputs: [],
+      timeline: [
+        { at: now, label: 'استلم مدير نَسَق الفكرة', detail: managerBrief.summary },
+        { at: now + 1, label: 'تم توزيع المهام', detail: `وُزعت خطة التنفيذ على ${managerBrief.taskPlan.length}/9 وكلاء، والهدف ${acceptanceTarget}/100.` }
+      ],
+      createdAt: now, updatedAt: now
+    };
+    const [id] = await db.add(PROJECTS, [record]);
+    if (!id) return error('تعذر إنشاء المشروع', 500);
+    return json({ project: await enrichProject(id, record) }, 201);
+  }],
+
   'GET /api/projects': [requireAuth(), async ctx => {
     const { items } = await db.list<ProjectRecord>(PROJECTS, { filter: { userId: ctx.user!.userId } });
     const projects = await Promise.all(items.sort((a, b) => b.updatedAt - a.updatedAt).map(item => enrichProject(item.id, item)));
@@ -169,7 +237,7 @@ export const appRoutes: RouterRoutes = {
       userId: ctx.user!.userId, name: body.name.trim().slice(0, 120), brief: body.brief.trim().slice(0, 6000),
       audience: String(body.audience || 'الجمهور العام').slice(0, 500), goal: String(body.goal || 'تحسين الوضوح والتحويل').slice(0, 500),
       style: String(body.style || 'حديث وواضح').slice(0, 500), references: Array.isArray(body.references) ? body.references.map(String).filter(Boolean).slice(0, 5) : [],
-      mode: body.mode === 'economy' || body.mode === 'deep' ? body.mode : 'balanced', status: 'draft', progress: 0, currentWave: 0,
+      mode: body.mode === 'economy' || body.mode === 'deep' ? body.mode : 'balanced', acceptanceTarget: 85, acceptanceHistory: [], status: 'draft', progress: 0, currentWave: 0,
       agentOutputs: [], timeline: [{ at: now, label: 'تم إنشاء المشروع', detail: 'الموجز جاهز لبدء مجلس التصميم.' }], createdAt: now, updatedAt: now
     };
     const [id] = await db.add(PROJECTS, [record]);
@@ -233,7 +301,24 @@ export const appRoutes: RouterRoutes = {
 
       const wave3 = await runWave([6, 7, 8], context, firstSix, thinkingMode);
       const allOutputs = [...firstSix, ...wave3];
-      working = { ...working, currentWave: 3, progress: 88, agentOutputs: allOutputs, updatedAt: Date.now(), timeline: [...working.timeline, { at: Date.now(), label: 'الموجة الثالثة', detail: 'اكتملت الكفاءة والتقييم والنقد المنافس.' }] };
+      working = { ...working, currentWave: 3, progress: 86, agentOutputs: allOutputs, updatedAt: Date.now(), timeline: [...working.timeline, { at: Date.now(), label: 'الموجة الثالثة', detail: 'اكتملت الكفاءة والتقييم والنقد المنافس.' }] };
+      await updateProject(ctx.params.id, working);
+
+      const improvement = await improveAcceptance(working, context, allOutputs, thinkingMode);
+      working = {
+        ...working,
+        progress: 92,
+        agentOutputs: improvement.outputs,
+        acceptanceHistory: improvement.history,
+        updatedAt: Date.now(),
+        timeline: [...working.timeline, {
+          at: Date.now(),
+          label: improvement.rerunAgents.length ? 'تحسين درجة القبول' : 'درجة القبول مستوفاة',
+          detail: improvement.rerunAgents.length
+            ? `أعيدت مراجعة ${improvement.rerunAgents.join(' و')} وانتقلت الدرجة من ${improvement.before} إلى ${improvement.after}/100.`
+            : `النتيجة الأولية ${improvement.after}/100 وتجاوزت الهدف دون جولة إضافية.`
+        }]
+      };
       await updateProject(ctx.params.id, working);
       return json({ project: await finalizeProject(ctx.params.id, working) });
     } catch (err) {
