@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Audit production URL
         id: lighthouse
         uses: treosh/lighthouse-ci-action@v12
@@ -38,7 +38,7 @@ jobs:
           git push
       - name: Open issue when audit fails
         if: failure()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.issues.create({

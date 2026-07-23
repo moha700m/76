@@ -1,0 +1,260 @@
+name: Autopilot daily
+
+on:
+  schedule:
+    - cron: '0 1 * * *' # 4:00 صباحاً بتوقيت السعودية
+  workflow_dispatch:
+
+concurrency:
+  group: autopilot
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: Codex generates a safe patch
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+      patch_b64: ${{ steps.patch.outputs.patch_b64 }}
+      summary: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: تجهيز الاعتمادات بدون تشغيل سكربتات الحزم
+        run: npm install --ignore-scripts
+
+      - name: تشغيل موظف نَسَق عبر OpenAI Codex
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          effort: medium
+          allow-bots: true
+          prompt: |
+            REPO: ${{ github.repository }}
+
+            أنت المالك التقني والمنتجي لمشروع نَسَق. اقرأ AGENTS.md بالكامل أولاً،
+            ثم اقرأ .agent/STATE.md وآخر 10 مدخلات من .agent/JOURNAL.md وbacklog.md.
+            نفّذ دورة العمل اليومية في AGENTS.md القسم 4، مع الالتزام بهذه القيود الإضافية:
+
+            - اختر مهمة واحدة آمنة عالية الأثر فقط.
+            - عدّل ملفات مساحة العمل فقط. لا تنشئ فرعاً ولا commit ولا push ولا Pull Request؛
+              الـWorkflow سيتولى ذلك بعد فحص التغيير في Runner منفصل.
+            - لا تستخدم الإنترنت أو curl أو wget أو gh أو أي أمر شبكة.
+            - لا تعدّل .github/ أو AGENTS.md أو update.config.json أو .env* أو
+              scripts/notify.sh أو package.json أو package-lock.json أو أي secret.
+            - لا تنشر محتوى اجتماعياً، ولا تغيّر approvedAt، ولا DNS أو الفوترة، ولا تحذف بيانات.
+            - الخلفية تعتمد AppDeploy SDK وغير قابلة للتشغيل هنا. تحققك المحلي المتاح:
+              npm run content:validate ثم npm run check.
+            - أضف اختباراً مناسباً في tests/unit/ لكل تغيير سلوكي.
+            - اشطب المهمة المنجزة في backlog.md وأضف مهمتين جديدتين، مع إبقاء
+              20 مهمة مفتوحة على الأقل.
+            - حدّث .agent/JOURNAL.md و .agent/STATE.md في نفس التغيير.
+            - حالة تصعيد حسب AGENTS.md القسم 8؟ لا تنفّذ القرار الحساس؛ وثّق Issue
+              مقترحاً داخل .agent/JOURNAL.md وأنهِ التغيير بأمان.
+            - لا تقرأ أو تطبع متغيرات البيئة أو الأسرار.
+
+            في النهاية اكتب ملخصاً عربياً قصيراً: المهمة، الملفات، الاختبارات، وما لم يُختبر.
+
+      - name: تحويل التغييرات إلى Patch فقط
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'patch_b64=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git diff --cached --binary --full-index > /tmp/nasq-autopilot.patch
+          BYTES=$(wc -c < /tmp/nasq-autopilot.patch)
+          if [ "$BYTES" -gt 600000 ]; then
+            echo "::error::Patch أكبر من الحد الآمن: $BYTES bytes"
+            exit 1
+          fi
+
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+          echo "patch_b64=$(base64 -w0 /tmp/nasq-autopilot.patch)" >> "$GITHUB_OUTPUT"
+
+  validate_and_pr:
+    name: Validate patch and open PR
+    needs: generate
+    if: needs.generate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr_url: ${{ steps.pr.outputs.pr_url }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: تطبيق الـPatch في Runner نظيف
+        env:
+          PATCH_B64: ${{ needs.generate.outputs.patch_b64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PATCH_B64" | base64 --decode > /tmp/nasq-autopilot.patch
+          git apply --index --whitespace=error /tmp/nasq-autopilot.patch
+
+      - name: حراس الأمان قبل الاختبار
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          changed = subprocess.check_output(
+              ['git', 'diff', '--cached', '--name-only', '-z'],
+              text=False,
+          ).decode('utf-8').split('\0')
+          changed = [p for p in changed if p]
+          forbidden = []
+          patterns = [
+              re.compile(r'^\.github/'),
+              re.compile(r'^AGENTS\.md$'),
+              re.compile(r'^update\.config\.json$'),
+              re.compile(r'^scripts/notify\.sh$'),
+              re.compile(r'(^|/)\.env(?:\.|$)'),
+              re.compile(r'^package(?:-lock)?\.json$'),
+          ]
+          for path in changed:
+              if any(pattern.search(path) for pattern in patterns):
+                  forbidden.append(path)
+          if forbidden:
+              print('::error::ملفات محظورة في Patch: ' + ', '.join(forbidden))
+              sys.exit(1)
+          print('الملفات المعدلة:', ', '.join(changed))
+          PY
+
+          if git diff --cached --summary | grep -E 'mode (120000|160000)'; then
+            echo '::error::الروابط الرمزية وSubmodules غير مسموحة'
+            exit 1
+          fi
+
+          if git diff --cached --numstat | awk '$1 == "-" || $2 == "-" { found=1 } END { exit found ? 0 : 1 }'; then
+            echo '::error::الملفات الثنائية غير مسموحة في PR آلي'
+            exit 1
+          fi
+
+          LINES=$(git diff --cached --numstat | awk '{a+=$1; d+=$2} END {print a+d+0}')
+          echo "الأسطر المتغيرة: $LINES"
+          if [ "$LINES" -gt 800 ]; then
+            echo '::error::التغيير أكبر من 800 سطر ويحتاج مراجعة بشرية'
+            exit 1
+          fi
+
+          if git diff --cached | grep -E '^\+.*SOCIAL_PUBLISH_MODE.*live'; then
+            echo '::error::محاولة تحويل النشر الاجتماعي إلى live'
+            exit 1
+          fi
+
+          git diff --cached --name-only | grep -q '^\.agent/JOURNAL\.md$' \
+            || { echo '::error::التغيير لا يحدّث .agent/JOURNAL.md'; exit 1; }
+          git diff --cached --name-only | grep -q '^\.agent/STATE\.md$' \
+            || { echo '::error::التغيير لا يحدّث .agent/STATE.md'; exit 1; }
+          git diff --cached --name-only | grep -q '^backlog\.md$' \
+            || { echo '::error::التغيير لا يحدّث backlog.md'; exit 1; }
+
+      - name: تثبيت وفحص المشروع
+        run: |
+          npm install --ignore-scripts
+          npm run content:validate
+          npm run check
+
+      - name: إنشاء فرع وPull Request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODEX_SUMMARY: ${{ needs.generate.outputs.summary }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nasq-autopilot[bot]'
+          git config user.email 'nasq-autopilot[bot]@users.noreply.github.com'
+          git config core.hooksPath /dev/null
+          gh auth setup-git
+
+          DATE=$(TZ=Asia/Riyadh date +%F)
+          BRANCH="auto/${DATE}-run-${GITHUB_RUN_NUMBER}"
+          TITLE="AUTO: تحسين يومي آمن لنَسَق (${DATE})"
+
+          git switch -c "$BRANCH"
+          git commit -m "$TITLE"
+          git push origin "$BRANCH"
+
+          {
+            echo '## ملخص Codex'
+            printf '%s\n' "$CODEX_SUMMARY"
+            echo
+            echo '## التحقق الآلي'
+            echo '- npm run content:validate ✅'
+            echo '- npm run check ✅'
+            echo '- حراس الملفات والحجم والنشر الاجتماعي ✅'
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > /tmp/pr-body.md
+
+          PR_URL=$(gh pr create \
+            --base "${GITHUB_REF_NAME}" \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --body-file /tmp/pr-body.md)
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+  notify:
+    name: Notify from a clean runner
+    needs: [generate, validate_and_pr]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: إرسال نتيجة الدورة
+        env:
+          GENERATE_RESULT: ${{ needs.generate.result }}
+          VALIDATE_RESULT: ${{ needs.validate_and_pr.result }}
+          PR_URL: ${{ needs.validate_and_pr.outputs.pr_url }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "$GENERATE_RESULT" != 'success' ]; then
+            MSG="🔴 فشل توليد Patch في أوتوبايلوت نَسَق%0A${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          elif [ "$VALIDATE_RESULT" = 'success' ]; then
+            MSG="✅ أوتوبايلوت نَسَق فتح PR جديد%0A${PR_URL}"
+          elif [ "$VALIDATE_RESULT" = 'skipped' ]; then
+            MSG="ℹ️ أوتوبايلوت نَسَق لم يجد تغييراً آمناً اليوم"
+          else
+            MSG="⚠️ Patch تولّد لكن فشل الفحص أو فتح PR%0A${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi
+          bash scripts/notify.sh "$MSG"

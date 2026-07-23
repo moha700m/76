@@ -27,7 +27,7 @@ function PreviewPage({ token }: { token: string }) {
     setErrorText('');
     if (!isAppDeployHost()) {
       setPayload({
-        name: token === 'demo' ? 'مرصد تسعة Pro' : 'معاينة الموقع',
+        name: token === 'demo' ? 'نَسَق' : 'معاينة الموقع',
         remoteUrl: remotePreviewUrl(token)
       });
       return () => { active = false; };

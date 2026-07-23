@@ -9,7 +9,7 @@ function manifest(overrides = {}) {
     scheduledAt: '2026-07-22T16:00:00.000Z',
     approvedAt: '2026-07-22T15:00:00.000Z',
     videoUrl: 'https://cdn.example.com/video.mp4',
-    title: 'مرصد تسعة',
+    title: 'نَسَق',
     description: 'فيديو تجريبي',
     tags: ['ذكاء اصطناعي'],
     platforms: ['youtube', 'instagram'],

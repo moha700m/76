@@ -1,12 +1,12 @@
 # Tests
 ## Test 1 - فتح الصفحة الجديدة والمشروع التجريبي [sanity]
 Viewport: desktop
-Description: يتحقق من ظهور الهوية الجديدة وإمكانية الوصول إلى النتيجة والمعاينة دون تسجيل.
+Description: يتحقق من ظهور هوية نَسَق الجديدة وإمكانية الوصول إلى النتيجة والمعاينة دون تسجيل.
 Steps:
 1. افتح التطبيق وانتظر ظهور الصفحة التسويقية
-2. تحقق من ظهور عنوان خل فكرتك تصير موقع جاهز خلال دقائق
+2. تحقق من ظهور اسم نَسَق وعنوان خل فكرتك تصير موقع جاهز خلال دقائق
 3. اضغط شاهد مثالًا حيًا وانتقل إلى معاينة الموقع الكاملة
-Expected: تظهر اللهجة السعودية والهوية السماوية ونتيجة 9/9 ورابط معاينة موقع كاملة دون تسجيل دخول.
+Expected: يظهر اسم نَسَق دون اسم مرصد تسعة Pro، مع اللهجة السعودية والهوية السماوية ونتيجة 9/9 ورابط معاينة موقع كاملة دون تسجيل دخول.
 
 ## Test 2 - حماية إنشاء المشاريع بتسجيل الدخول
 Viewport: desktop
@@ -24,3 +24,28 @@ Steps:
 1. افتح الرابط الذي ينتهي بـ #/preview/demo على الجوال
 2. مرر موقع المعاينة وتحقق من بقاء المحتوى ظاهرًا
 Expected: تظهر المعاينة دون صفحة فارغة أو تمرير أفقي في واجهة الاستوديو.
+
+X OAuth acceptance tests
+- GET /api/oauth/x/start redirects to X with PKCE S256 and scopes tweet.read, tweet.write, users.read, offline.access, media.write.
+- OAuth state and verifier are kept in a short-lived encrypted HttpOnly Secure SameSite=Lax cookie.
+- Callback rejects state mismatch, missing refresh token, missing scopes, and any account other than @agentsworks4u.
+- Access and refresh tokens are encrypted before storage on the private system/social-state branch and never returned to the browser.
+- GET /api/oauth/x/status returns only configured/connected state and public account metadata.
+
+## Test 4 - مدير نَسَق من فكرة قصيرة إلى تشغيل الوكلاء
+Viewport: mobile and desktop
+Description: يتحقق من أن زر ابدأ مشروعك يفتح مدير نَسَق وأن فكرة قصيرة تكفي لإنشاء موجز وتوزيع العمل.
+Steps:
+1. اضغط «ابدأ مشروعك الحين» من الصفحة الرئيسية.
+2. سجّل الدخول عند الحاجة.
+3. اكتب: «أبي موقع لحضانة أطفال يساعد الأهالي يعرفون البرامج ويحجزون زيارة».
+4. اضغط «حلّل الفكرة وشغّل الفريق».
+Expected: يظهر مشروع جديد يحتوي اسمًا وجمهورًا وهدفًا وطابعًا بصريًا وموجز مدير نَسَق وخطة 9/9، ثم تبدأ موجات الوكلاء تلقائيًا.
+
+## Test 5 - تحسين درجة القبول المحدود
+Viewport: desktop
+Description: يتحقق من عدم وجود حلقة تحسين لا نهائية.
+Steps:
+1. شغّل مشروعًا ينتج مخرجًا منخفض الثقة.
+2. راقب سجل التشغيل بعد الموجة الثالثة.
+Expected: تعاد مراجعة أضعف مخرجين مرة واحدة فقط، تسجل الدرجة قبل وبعد، ثم ينتقل المشروع إلى التجميع النهائي.

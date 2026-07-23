@@ -1,4 +1,4 @@
-# إعداد النشر التلقائي — مرصد تسعة Pro
+# إعداد النشر التلقائي — نَسَق
 
 هذا الدليل يجهّز النظام الهجين بالشكل التالي:
 
@@ -106,7 +106,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ## إنشاء المشروع والمفاتيح
 
 1. افتح Google Cloud Console.
-2. أنشئ Project باسم قريب من `Marsad Tisaa Publisher`.
+2. أنشئ Project باسم قريب من `NASQ Publisher`.
 3. افتح **APIs & Services → Library**.
 4. ابحث عن **YouTube Data API v3** واضغط **Enable**.
 5. افتح **OAuth consent screen**.

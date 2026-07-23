@@ -1,4 +1,5 @@
 import { ai } from '@appdeploy/sdk';
+import { calculateAcceptanceScore } from '../lib/project-quality.mjs';
 
 export type ThinkingMode = 'FAST' | 'DEEP';
 export type AgentOutput = {
@@ -25,6 +26,8 @@ export type ProjectContext = {
   referenceEvidence: Array<{ url: string; title: string; text: string }>;
   memories: Array<{ title: string; content: string }>;
   feedback?: string;
+  managerSummary?: string;
+  taskPlan?: Array<{ agentId: string; agentName: string; task: string }>;
 };
 
 export const DESIGN_AGENTS = [
@@ -92,7 +95,8 @@ const synthesisSchema = {
 
 function compactContext(context: ProjectContext, previous: AgentOutput[]) {
   return JSON.stringify({
-    project: { name: context.name, brief: context.brief, audience: context.audience, goal: context.goal, style: context.style, references: context.references, feedback: context.feedback || '' },
+    project: { name: context.name, brief: context.brief, audience: context.audience, goal: context.goal, style: context.style, references: context.references, feedback: context.feedback || '', managerSummary: context.managerSummary || '' },
+    assignedTasks: context.taskPlan || [],
     evidence: context.referenceEvidence.map(item => ({ url: item.url, title: item.title, excerpt: item.text.slice(0, 2200) })),
     approvedMemory: context.memories.slice(0, 8),
     priorAgents: previous.map(item => ({ agent: item.name, summary: item.summary, findings: item.findings, decisions: item.decisions, deliverable: item.deliverable }))
@@ -105,7 +109,7 @@ export async function runDesignAgent(agentIndex: number, context: ProjectContext
   try {
     const result = await ai.extract({
       system: `أنت ${agent.name}، خبير عربي senior في تصميم المنتجات الرقمية وتجربة المستخدم. اكتب بالعربية الواضحة، لا تستخدم كلامًا عامًا، واربط كل قرار بالموجز والأدلة. لا تدّعِ حقائق غير موجودة.`,
-      prompt: `${agent.mission}\nأخرج نتيجة عملية لفريق تصميم وبرمجة يستطيع تنفيذها مباشرة.`,
+      prompt: `${context.taskPlan?.find(item => item.agentId === agent.id)?.task || agent.mission}\nأخرج نتيجة عملية لفريق تصميم وبرمجة يستطيع تنفيذها مباشرة.`,
       content: compactContext(context, previous), schema: resultSchema, maxRetries: 1,
       maxTokens: thinkingMode === 'DEEP' ? 1200 : 850, temperature: 0.25, thinkingMode
     });
@@ -152,7 +156,5 @@ export async function synthesizeDesign(context: ProjectContext, outputs: AgentOu
 }
 
 export function calculateScore(outputs: AgentOutput[]) {
-  const average = outputs.reduce((sum, item) => sum + item.confidence, 0) / Math.max(outputs.length, 1);
-  const complete = outputs.filter(item => item.status === 'complete').length;
-  return Math.round(Math.min(100, average * 0.75 + (complete / 9) * 25));
+  return calculateAcceptanceScore(outputs, 9);
 }

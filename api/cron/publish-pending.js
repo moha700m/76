@@ -6,8 +6,8 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
   if (!requireCron(req)) return json(res, 401, { error: 'unauthorized' });
   if (!consumeRateLimit(req, res, { scope: 'cron-publish', max: 5, windowMs: 3600000 })) return json(res, 429, { error: 'rate_limited' });
-  const token = process.env.GITHUB_DISPATCH_TOKEN;
-  const repository = process.env.GITHUB_REPOSITORY;
+  const token = process.env.GH_PAT || process.env.GITHUB_DISPATCH_TOKEN;
+  const repository = process.env.GITHUB_REPOSITORY || 'moha700m/76';
   const workflow = process.env.GITHUB_WORKFLOW_FILE || 'social-publish.yml';
   const branch = process.env.GITHUB_DEFAULT_BRANCH || 'main';
   if (!token || !repository) return json(res, 503, { error: 'github_dispatch_not_configured' });
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
       'content-type': 'application/json',
-      'user-agent': 'marsad-tisaa-pro-cron'
+      'user-agent': 'nasq-ai-cron'
     },
     body: JSON.stringify({ ref: branch, inputs: { source: 'vercel-cron' } })
   });

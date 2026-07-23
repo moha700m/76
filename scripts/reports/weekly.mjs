@@ -45,7 +45,7 @@ function compare(current, old) {
   return delta === 0 ? 'بدون تغيير' : delta > 0 ? `+${delta}` : String(delta);
 }
 
-const report = `# تقرير مرصد تسعة الأسبوعي — ${date}\n\n` +
+const report = `# تقرير نَسَق الأسبوعي — ${date}\n\n` +
 `<!-- commits:${commits} -->\n<!-- features:${features} -->\n<!-- fixes:${fixes} -->\n<!-- publishedVideos:${publishedVideos} -->\n<!-- performance:${performance} -->\n<!-- accessibility:${accessibility} -->\n<!-- seo:${seo} -->\n\n` +
 `| المؤشر | هذا الأسبوع | مقارنة بالسابق |\n|---|---:|---:|\n` +
 `| Commits | ${commits} | ${compare(commits, previous.commits)} |\n` +

@@ -82,7 +82,7 @@ export async function generateSitePreview(project: SitePreviewProject) {
 
 export function buildDemoPreview() {
   return buildFallbackPreview({
-    name: 'مرصد تسعة Pro',
+    name: 'نَسَق',
     brief: 'منصة عربية تشغّل تسعة وكلاء متخصصين ثم تبني معاينة موقع حقيقية قابلة للمشاركة.',
     audience: 'أصحاب الأعمال والوكالات والمستقلون في السعودية',
     goal: 'تحويل الفكرة إلى قرار تصميم ورابط عرض واضح',
