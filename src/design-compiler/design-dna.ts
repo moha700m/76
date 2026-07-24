@@ -72,21 +72,17 @@ export function deriveDesignDNA(project: PreviewProject): DesignDNA {
 
 // Section plan per industry: keep it focused, always include hero + cta + footer.
 export function sectionsForIndustry(industry: Industry): SectionKind[] {
-  const withProof: SectionKind[] = ['hero', 'services', 'testimonials', 'cta', 'footer'];
-  const lean: SectionKind[] = ['hero', 'services', 'cta', 'footer'];
+  const lean: SectionKind[] = ['hero', 'highlights', 'services', 'process', 'cta', 'footer'];
   switch (industry) {
-    case 'coffee':
-    case 'restaurant':
-    case 'clinic':
-    case 'maintenance':
-    case 'realestate':
-    case 'agency':
-      return withProof;
-    case 'retail':
-    case 'nursery':
-      return withProof;
-    default:
-      return lean; // generic briefs stay lean until there is proof content
+    case 'coffee': return ['hero', 'highlights', 'services', 'gallery', 'process', 'testimonials', 'faq', 'cta', 'footer'];
+    case 'restaurant': return ['hero', 'gallery', 'highlights', 'services', 'testimonials', 'faq', 'cta', 'footer'];
+    case 'retail': return ['hero', 'highlights', 'services', 'gallery', 'testimonials', 'faq', 'cta', 'footer'];
+    case 'clinic': return ['hero', 'highlights', 'services', 'process', 'testimonials', 'faq', 'cta', 'footer'];
+    case 'maintenance': return ['hero', 'highlights', 'services', 'process', 'testimonials', 'cta', 'footer'];
+    case 'realestate': return ['hero', 'gallery', 'highlights', 'services', 'process', 'testimonials', 'cta', 'footer'];
+    case 'nursery': return ['hero', 'highlights', 'services', 'gallery', 'process', 'testimonials', 'faq', 'cta', 'footer'];
+    case 'agency': return ['hero', 'highlights', 'services', 'process', 'gallery', 'testimonials', 'faq', 'cta', 'footer'];
+    default: return lean;
   }
 }
 
@@ -125,8 +121,41 @@ export function buildContent(project: PreviewProject, dna: DesignDNA): PreviewCo
     ctaTitle: String((pc.closing as Record<string, unknown>)?.title || project.goal),
     ctaBody: String((pc.closing as Record<string, unknown>)?.body || 'راجع المحتوى والهوية ثم اعتمد النسخة.'),
     footerLine: String(pc.footerLine || project.name),
-    navigation: (asStringArray(pc.navigation).length ? asStringArray(pc.navigation) : ['الرئيسية', 'العرض', 'ابدأ']).slice(0, 5)
+    navigation: (asStringArray(pc.navigation).length ? asStringArray(pc.navigation) : ['الرئيسية', 'العرض', 'ابدأ']).slice(0, 5),
+    highlights: buildHighlights(dna),
+    steps: buildSteps(project, dna),
+    gallery: buildGallery(services),
+    faqs: buildFaqs(dna)
   };
+}
+
+// Qualitative value props only — never fabricated numbers or claims.
+function buildHighlights(dna: DesignDNA): string[] {
+  return ['هوية مخصصة لمشروعك', 'تجربة جوال أولًا', `محتوى عربي واضح لـ ${dna.audience}`, 'رحلة قصيرة نحو الإجراء'];
+}
+
+function buildSteps(project: PreviewProject, dna: DesignDNA): Array<{ title: string; desc: string }> {
+  const s = (project.synthesis || {}) as Record<string, unknown>;
+  const journey = Array.isArray(s.primaryJourney) ? (s.primaryJourney as unknown[]).filter(x => typeof x === 'string') as string[] : [];
+  const base = journey.length >= 3 ? journey : ['فهم وعد المشروع', 'استكشاف العرض المناسب', 'معرفة طريقة الاستخدام', `اتخاذ الإجراء: ${dna.goal}`];
+  return base.slice(0, 4).map((title, i) => ({
+    title,
+    desc: i === 0 ? 'نبدأ بفهم الهدف والسياق.' : i === base.length - 1 ? 'ننتقل إلى الإجراء بثقة.' : 'خطوة مترابطة تبني على ما قبلها.'
+  }));
+}
+
+function buildGallery(services: Array<{ title: string; body: string }>): string[] {
+  const labels = services.map(x => x.title).filter(Boolean);
+  const fill = ['واجهة', 'تفاصيل', 'تجربة', 'هوية', 'محتوى', 'خطوة'];
+  return (labels.length ? labels : fill).slice(0, 6);
+}
+
+function buildFaqs(dna: DesignDNA): Array<{ q: string; a: string }> {
+  return [
+    { q: 'كيف أبدأ؟', a: `تواصل معنا ونوضح لك الخطوات المناسبة لـ ${dna.audience}.` },
+    { q: 'ما الذي يميّز التجربة؟', a: `${dna.goal} عبر تجربة واضحة ومحتوى مرتبط مباشرة بفكرتك.` },
+    { q: 'هل التصميم مناسب للجوال؟', a: 'نعم، مبني جوال أولًا ومتجاوب مع جميع المقاسات.' }
+  ];
 }
 
 function industryServices(industry: Industry): Array<{ title: string; body: string }> {

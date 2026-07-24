@@ -6,11 +6,15 @@ export type Industry =
 
 export type Tone = 'luxury' | 'modern' | 'corporate' | 'bold' | 'warm' | 'creative';
 export type ColorMood = 'dark' | 'light' | 'warm' | 'vibrant' | 'muted';
-export type SectionKind = 'hero' | 'services' | 'testimonials' | 'cta' | 'footer';
+export type SectionKind =
+  | 'hero' | 'highlights' | 'services' | 'gallery' | 'process'
+  | 'testimonials' | 'faq' | 'cta' | 'footer';
 
 export type ThemeId =
   | 'luxury-dark' | 'modern-startup' | 'clean-corporate'
-  | 'bold-landing' | 'warm-local-business' | 'creative-studio';
+  | 'bold-landing' | 'warm-local-business' | 'creative-studio'
+  | 'fintech-trust' | 'beauty-soft' | 'editorial-light'
+  | 'vibrant-pop' | 'nature-fresh' | 'royal-emerald';
 
 export interface DesignDNA {
   industry: Industry;
@@ -53,6 +57,10 @@ export interface PreviewContent {
   ctaBody: string;
   footerLine: string;
   navigation: string[];
+  highlights: string[];
+  steps: Array<{ title: string; desc: string }>;
+  gallery: string[];
+  faqs: Array<{ q: string; a: string }>;
 }
 
 export interface SectionConfig {

@@ -7,11 +7,19 @@ import { SERVICES_VARIANTS } from './sections/services.ts';
 import { TESTIMONIALS_VARIANTS } from './sections/testimonials.ts';
 import { CTA_VARIANTS } from './sections/cta.ts';
 import { FOOTER_VARIANTS } from './sections/footer.ts';
+import { HIGHLIGHTS_VARIANTS } from './sections/highlights.ts';
+import { GALLERY_VARIANTS } from './sections/gallery.ts';
+import { PROCESS_VARIANTS } from './sections/process.ts';
+import { FAQ_VARIANTS } from './sections/faq.ts';
 
 const VARIANTS: Record<SectionKind, readonly string[]> = {
   hero: HERO_VARIANTS,
+  highlights: HIGHLIGHTS_VARIANTS,
   services: SERVICES_VARIANTS,
+  gallery: GALLERY_VARIANTS,
+  process: PROCESS_VARIANTS,
   testimonials: TESTIMONIALS_VARIANTS,
+  faq: FAQ_VARIANTS,
   cta: CTA_VARIANTS,
   footer: FOOTER_VARIANTS
 };

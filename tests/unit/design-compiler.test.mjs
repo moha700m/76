@@ -11,16 +11,16 @@ const startupTech = { name: 'Nova', brief: 'منصة تقنية داكنة', aud
 const clinic = { name: 'عيادة', brief: 'عيادة أسنان طبية', audience: 'مرضى', goal: 'حجز موعد', style: 'مؤسسي رسمي نظيف' };
 const luxury = { name: 'دار', brief: 'عقار فاخر', audience: 'مستثمرون', goal: 'حجز معاينة', style: 'فاخر ذهبي أسود' };
 
-test('all six theme presets exist', () => {
+test('twelve theme presets exist', () => {
   const ids = Object.keys(THEMES).sort();
-  assert.deepEqual(ids, ['bold-landing','clean-corporate','creative-studio','luxury-dark','modern-startup','warm-local-business'].sort());
+  assert.deepEqual(ids, ['beauty-soft','bold-landing','clean-corporate','creative-studio','editorial-light','fintech-trust','luxury-dark','modern-startup','nature-fresh','royal-emerald','vibrant-pop','warm-local-business'].sort());
 });
 
 test('theme selection follows tone derived from style', () => {
   assert.equal(compilePage(coffee).theme.id, 'warm-local-business');
   assert.equal(compilePage(startupTech).theme.id, 'modern-startup');
-  assert.equal(compilePage(clinic).theme.id, 'clean-corporate');
-  assert.equal(compilePage(luxury).theme.id, 'luxury-dark');
+  assert.equal(compilePage(clinic).theme.id, 'fintech-trust');
+  assert.equal(compilePage(luxury).theme.id, 'royal-emerald');
 });
 
 test('section selection: proof industries include testimonials, generic stays lean', () => {

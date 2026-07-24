@@ -5,6 +5,10 @@ import { renderServices } from '../sections/services.ts';
 import { renderTestimonials } from '../sections/testimonials.ts';
 import { renderCta } from '../sections/cta.ts';
 import { renderFooter } from '../sections/footer.ts';
+import { renderHighlights } from '../sections/highlights.ts';
+import { renderGallery } from '../sections/gallery.ts';
+import { renderProcess } from '../sections/process.ts';
+import { renderFaq } from '../sections/faq.ts';
 
 export function esc(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, ch =>
@@ -24,6 +28,10 @@ export function chip(text: string): string {
 export function renderSection(cfg: SectionConfig, content: PreviewContent, theme: Theme, dna: DesignDNA): string {
   switch (cfg.kind) {
     case 'hero': return renderHero(cfg.variant, content, theme, dna);
+    case 'highlights': return renderHighlights(cfg.variant, content, theme, dna);
+    case 'gallery': return renderGallery(cfg.variant, content, theme, dna);
+    case 'process': return renderProcess(cfg.variant, content, theme, dna);
+    case 'faq': return renderFaq(cfg.variant, content, theme, dna);
     case 'services': return renderServices(cfg.variant, content, theme, dna);
     case 'testimonials': return renderTestimonials(cfg.variant, content, theme, dna);
     case 'cta': return renderCta(cfg.variant, content, theme, dna);
