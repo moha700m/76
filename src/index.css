@@ -8,17 +8,22 @@
   color-scheme: dark;
   background: #05070b;
 }
+
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; background: #05070b; }
 h1, h2, h3, h4, strong { font-family: 'Cairo', 'Noto Sans Arabic', sans-serif; }
 * { box-sizing: border-box; }
 button, input, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
+
 .noise-grid {
-  background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-image:
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: linear-gradient(to bottom, black, transparent 82%);
 }
+
 .agent-scan { position: relative; overflow: hidden; }
 .agent-scan::after {
   content: '';
@@ -28,12 +33,16 @@ button { -webkit-tap-highlight-color: transparent; }
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.58), transparent);
   animation: scan 2.3s ease-in-out infinite;
 }
+
 .preview-stage { background-image: radial-gradient(circle at 50% 0%, rgba(115,231,255,.08), transparent 36%); }
 .custom-scroll { scrollbar-width: thin; scrollbar-color: #2b3b4e transparent; }
+
 @keyframes scan { 0%, 22% { transform: translateX(-110%); } 75%, 100% { transform: translateX(110%); } }
+
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: #05070b; }
 ::-webkit-scrollbar-thumb { background: #2b3b4e; border-radius: 999px; border: 2px solid #05070b; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
