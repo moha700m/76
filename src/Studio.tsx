@@ -78,6 +78,57 @@ function apiErrorMessage(err: unknown, fallback: string) {
   return typeof candidate === 'string' && candidate.trim() ? candidate.slice(0, 500) : fallback;
 }
 
+function safeLog(event: string, project?: { id?: string; currentRunId?: string; agentOutputs?: unknown[]; synthesis?: unknown; status?: string; progress?: number; previewPath?: string }) {
+  try {
+    const id = project?.id ? String(project.id).slice(0, 8) : undefined;
+    console.log('[nasq]', event, {
+      project: id,
+      run: project?.currentRunId ? String(project.currentRunId).slice(0, 8) : undefined,
+      agents: Array.isArray(project?.agentOutputs) ? project!.agentOutputs!.length : undefined,
+      synthesis: project ? Boolean(project.synthesis) : undefined,
+      status: project?.status,
+      progress: project?.progress,
+      preview: project?.previewPath ? true : undefined
+    });
+  } catch {}
+}
+
+function isConflictOrOffline(err: unknown) {
+  const record = err && typeof err === 'object' ? err as Record<string, unknown> : {};
+  const response = record.response && typeof record.response === 'object' ? record.response as Record<string, unknown> : null;
+  const status = Number(response?.status || record.status || 0);
+  return status === 409 || status === 0 || status === 504 || status >= 500;
+}
+
+async function fetchProjectSnapshot(projectId: string): Promise<Project | null> {
+  try {
+    const response = await api.get(`/api/projects/${projectId}`);
+    return response.data.project as Project;
+  } catch {
+    return null;
+  }
+}
+
+// Bounded polling: re-reads the saved project until synthesis is present and progress hits 100,
+// or the time budget elapses. 409 / dropped responses are treated as "wait then re-read", never failure.
+async function pollUntilFinalized(projectId: string, onProject: (project: Project) => void, budgetMs = 60000): Promise<Project | null> {
+  const deadline = Date.now() + budgetMs;
+  let latest: Project | null = null;
+  let delay = 1500;
+  while (Date.now() < deadline) {
+    const snapshot = await fetchProjectSnapshot(projectId);
+    if (snapshot) {
+      latest = snapshot;
+      onProject(snapshot);
+      safeLog('poll.snapshot', snapshot);
+      if (snapshot.synthesis && snapshot.agentOutputs.length === 9 && snapshot.progress === 100) return snapshot;
+    }
+    await new Promise(resolve => window.setTimeout(resolve, delay));
+    delay = Math.min(delay + 1000, 5000);
+  }
+  return latest;
+}
+
 const agentBlueprints = [
   ['brief-analyst', 'محلل الموجز', 'تحويل الطلب إلى مواصفات', 'How We Claude Code', 'حوّل الطلب إلى أهداف واضحة ومعايير قبول قابلة للفحص.'],
   ['evidence-researcher', 'باحث الأدلة', 'السوق والمنافسون والمراجع', 'Research Desk', 'حلل المراجع وحدد ما يثق به الجمهور وما يجب تجنبه.'],
@@ -189,7 +240,8 @@ function Studio() {
     style: 'تقني فاخر، واضح، Mobile First', references: '', mode: 'balanced' as Project['mode']
   });
   const connectionRef = useRef<WsConnection | null>(null);
-  const finalizeAttemptRef = useRef<Set<string>>(new Set());
+  const sitePreviewAttemptRef = useRef<Set<string>>(new Set());
+const activePipelineRef = useRef(false);
 
   const projectTitle = selected?.name || 'المشروع';
   const statusLabel = useMemo(() => ({
@@ -268,28 +320,8 @@ function Studio() {
     }
   }
 
-  useEffect(() => {
-    if (!selected || selected.id === 'demo' || selected.synthesis || selected.agentOutputs.length < 9 || busy) return;
-    const runKey = `${selected.id}:${selected.currentRunId || 'saved'}`;
-    if (finalizeAttemptRef.current.has(runKey)) return;
-    const delay = selected.progress === 95 ? 16000 : 1200;
-    const timer = window.setTimeout(() => {
-      finalizeAttemptRef.current.add(runKey);
-      setBusy(true);
-      setErrorText('');
-      completeFinalization(selected).catch(async () => {
-        try {
-          const response = await api.get(`/api/projects/${selected.id}`);
-          const latest = response.data.project as Project;
-          syncProject(latest);
-          if (!latest.synthesis) setErrorText('تعذر التجميع التلقائي. اضغط «استكمال النتيجة» للمحاولة دون إعادة الوكلاء.');
-        } catch {
-          setErrorText('تعذر التجميع التلقائي. اضغط «استكمال النتيجة» للمحاولة دون إعادة الوكلاء.');
-        }
-      }).finally(() => setBusy(false));
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [selected?.id, selected?.currentRunId, selected?.progress, selected?.agentOutputs.length, selected?.synthesis, busy]);
+  // Auto-finalize useEffect removed: runCwcWaves is now the single owner of finalize during the automatic pipeline.
+// The manual «استكمال النتيجة» button (finalizeResult) remains available as a safe fallback.
 
   async function signOut() {
     await auth.signOut();
@@ -331,25 +363,59 @@ function Studio() {
   }
 
   async function runManagedPipeline(project: Project) {
-    setSelected(project); setView('project');
-    setManagerStatus('تم اعتماد الموجز، وبدأ نَسَق تحويل فكرتك إلى خطة تصميم ثم موقع حي مخصص.');
-    let completed = await executeAgentWaves(project);
-    if (completed.agentOutputs.length === 9 && !completed.synthesis) completed = await completeFinalization(completed);
-    if (completed.synthesis && !completed.previewPath) {
-      setManagerStatus('اكتملت النتيجة، ومدير نَسَق يبني الآن معاينة الموقع ورابط المشاركة...');
-      try {
-        await new Promise(resolve => window.setTimeout(resolve, 4000));
-        const previewResponse = await api.post(`/api/projects/${completed.id}/site-preview`, {});
-        completed = previewResponse.data.project as Project;
-        setManagerStatus('اكتمل المشروع: الخطة والمعاينة الحية المطابقة للفكرة ورابط المشاركة جاهزة.');
-      } catch {
-        setManagerStatus('اكتملت نتيجة الوكلاء. تعذر إنشاء المعاينة تلقائيًا ويمكن بناؤها من داخل المشروع.');
-      }
-    }
-    syncProject(completed);
-  }
+setSelected(project); setView('project');
+setManagerStatus('تم اعتماد الموجز، وبدأ نَسَق تحويل فكرتك إلى خطة تصميم ثم موقع حي مخصص.');
+activePipelineRef.current = true;
+safeLog('pipeline.start', project);
+try {
+// runCwcWaves is the SINGLE owner of finalize during the automatic pipeline.
+let completed = await executeAgentWaves(project);
+safeLog('pipeline.waves.done', completed);
 
-  async function confirmManagedProject(event: FormEvent) {
+// Never re-run any wave once 9/9 exist. If finalize hasn't landed in memory yet,
+// re-read the saved project and poll (409 / dropped responses mean "wait then re-read").
+if (completed.agentOutputs.length === 9 && (!completed.synthesis || completed.progress !== 100)) {
+const snapshot = await fetchProjectSnapshot(completed.id);
+if (snapshot) { completed = snapshot; syncProject(snapshot); }
+if (!(completed.synthesis && completed.progress === 100)) {
+setManagerStatus('اكتملت 9/9، ويجري تجميع النتيجة النهائية في طلب مستقل. ننتظر حفظ النتيجة دون إعادة أي وكيل...');
+const finalized = await pollUntilFinalized(completed.id, syncProject);
+if (finalized) completed = finalized;
+}
+}
+
+// Build the site preview exactly once per project run (idempotency keyed on id + runId).
+const previewKey = `${completed.id}:${completed.currentRunId || 'saved'}`;
+if (completed.synthesis && !completed.previewPath && !sitePreviewAttemptRef.current.has(previewKey)) {
+sitePreviewAttemptRef.current.add(previewKey);
+setManagerStatus('اكتملت النتيجة، ومدير نَسَق يبني الآن معاينة الموقع ورابط المشاركة...');
+try {
+const previewResponse = await api.post(`/api/projects/${completed.id}/site-preview`, {});
+completed = previewResponse.data.project as Project;
+safeLog('pipeline.preview.built', completed);
+} catch (previewError) {
+// A conflict / dropped response does not mean failure: re-read the saved project.
+const snapshot = await fetchProjectSnapshot(completed.id);
+if (snapshot?.previewPath) { completed = snapshot; }
+else {
+sitePreviewAttemptRef.current.delete(previewKey);
+setManagerStatus('اكتملت نتيجة الوكلاء. تعذر إنشاء المعاينة تلقائيًا ويمكن بناؤها من داخل المشروع.');
+safeLog('pipeline.preview.deferred', completed);
+}
+}
+}
+
+// Final mandatory re-read so previewPath / progress / status are the saved truth, then confirm visibility.
+const finalSnapshot = await fetchProjectSnapshot(completed.id);
+if (finalSnapshot) completed = finalSnapshot;
+if (completed.previewPath) setManagerStatus('اكتمل المشروع: الخطة والمعاينة الحية المطابقة للفكرة ورابط المشاركة جاهزة.');
+syncProject(completed);
+safeLog('pipeline.done', completed);
+} finally {
+activePipelineRef.current = false;
+}
+}
+async function confirmManagedProject(event: FormEvent) {
     event.preventDefault();
     if (!managedDraft) return;
     if (!form.name.trim() || !form.brief.trim()) { setErrorText('راجع اسم المشروع والموجز قبل تشغيل الفريق.'); return; }
