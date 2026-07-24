@@ -39,6 +39,9 @@ export const api = {
   async post(): Promise<{ data: any }> {
     throw new Error('هذا المسار يعمل داخل استوديو AppDeploy فقط.');
   },
+  async put(_path: string, _body?: unknown): Promise<{ data: any }> {
+    throw new Error('هذا المسار يعمل داخل استوديو AppDeploy فقط.');
+  },
   async delete(): Promise<{ data: any }> {
     throw new Error('هذا المسار يعمل داخل استوديو AppDeploy فقط.');
   }

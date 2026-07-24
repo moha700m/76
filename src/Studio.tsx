@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { runCwcWaves } from './cwc-runner';
 import { api, auth, ws, type AuthUser, type WsConnection } from '@appdeploy/client';
 import {
   ArrowLeft, ArrowUpLeft, BookOpen, Bot, Brain, Check, ChevronLeft,
@@ -324,8 +325,7 @@ function Studio() {
   }
 
   async function executeAgentWaves(project: Project) {
-    const response = await api.post(`/api/projects/${project.id}/run`, {});
-    const current = response.data.project as Project;
+    const current = await runCwcWaves(project, { onStatus: setManagerStatus, onProject: syncProject, finalize: completeFinalization });
     syncProject(current);
     return current;
   }
@@ -355,7 +355,7 @@ function Studio() {
     if (!form.name.trim() || !form.brief.trim()) { setErrorText('راجع اسم المشروع والموجز قبل تشغيل الفريق.'); return; }
     setBusy(true); setErrorText('');
     try {
-      const response = await api.put(`/api/projects/${managedDraft.id}/brief`, {
+      const response = await (api as any).put(`/api/projects/${managedDraft.id}/brief`, {
         ...form,
         references: form.references.split('\n').map(value => value.trim()).filter(Boolean)
       });
@@ -692,7 +692,7 @@ function ProjectView({ project, statusLabel, busy, expandedAgent, setExpandedAge
   const finalizingStalled = project.progress === 95 && finalizingElapsed >= 15000;
   const finalizingSeconds = Math.floor(finalizingElapsed / 1000);
   const isDemo = project.id === 'demo';
-  const recoverablePartial = project.status === 'running' && project.agentOutputs.length > 0 && project.agentOutputs.length < 9;
+  const recoverablePartial = (project.status === 'running' || project.status === 'error') && project.agentOutputs.length < 9;
   const running = project.status === 'running' && !recoverablePartial;
   const canReview = project.status === 'review' || project.status === 'needs_revision';
   const needsFinalize = !isDemo && project.agentOutputs.length === 9 && !project.synthesis && (project.status === 'running' || project.status === 'error');

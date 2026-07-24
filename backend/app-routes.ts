@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'crypto';
 import { ai, db, error, json, requireAuth, secrets, storage, type RouterRoutes } from '@appdeploy/sdk';
 import { notifySubscribers } from './realtime-subscribers';
+import { runVercelCwcWave } from './vercel-agent-bridge';
 import { calculateScore, DESIGN_AGENTS, runDesignWave, synthesizeDesign, type AgentOutput, type ProjectContext, type ThinkingMode } from './design-agents';
 import { buildDemoPreview, generateSitePreview, htmlResponse } from './site-preview';
 import { expandProjectIdea, type ManagerBrief } from './project-manager';
@@ -18,6 +19,10 @@ type ProjectRecord = {
   progress: number;
   currentWave: number;
   currentRunId?: string;
+  activeWave?: number;
+  waveLockAt?: number;
+  councilMode?: 'vercel-openai-cwc';
+  lastRunError?: { code: string; message: string; retryable: boolean; wave: number; at: number };
   agentOutputs: AgentOutput[];
   synthesis?: Record<string, unknown>;
   score?: number;
@@ -451,121 +456,109 @@ export const appRoutes: RouterRoutes = {
     async ctx => {
       const project = await getOwnedProject(ctx.user!.userId, ctx.params.id);
       if (!project) return error('المشروع غير موجود', 404);
-      const legacyPartial = project.agentOutputs.length > 0 && project.agentOutputs.length < 9;
-      if (project.status === 'running' && project.currentRunId && !legacyPartial) return error('هناك مجلس يعمل حاليًا', 409);
+      if (project.agentOutputs.length === 9 && project.synthesis) return json({ project: await enrichProject(ctx.params.id, project), needsContinue: false, needsFinalize: false });
+      if (![0, 3, 6].includes(project.agentOutputs.length)) return error('حالة مخرجات الوكلاء غير صالحة للاستكمال', 409);
+
       const now = Date.now();
-      const run: RunRecord = { userId: project.userId, projectId: ctx.params.id, status: 'running', mode: project.mode, outputs: [], startedAt: now };
-      const [runId] = await db.add(RUNS, [run]);
-      if (!runId) return error('تعذر بدء المجلس', 500);
-      const preparing: ProjectRecord = { ...project, status: 'running', progress: 10, currentWave: 0, currentRunId: runId, agentOutputs: [], synthesis: undefined, score: undefined, updatedAt: now, timeline: [...project.timeline, { at: now, label: 'بدأ مجلس نَسَق', detail: 'يحوّل المجلس موجز مدير نَسَق إلى خطة موقع مخصصة ثم يبني المعاينة الحية.' }] };
-      await updateProject(ctx.params.id, preparing);
+      const nextWave = (project.agentOutputs.length / 3 + 1) as 1 | 2 | 3;
+      const lockIsFresh = Boolean(project.activeWave && project.waveLockAt && now - project.waveLockAt < 90_000);
+      if (lockIsFresh) return error(`الموجة ${project.activeWave} تعمل حاليًا`, 409);
+
+      let runId = project.currentRunId;
+      let run: RunRecord | undefined;
+      if (runId) [run] = await db.get<RunRecord>(RUNS, [runId]);
+      if (!runId || !run) {
+        run = { userId: project.userId, projectId: ctx.params.id, status: 'running', mode: project.mode, outputs: project.agentOutputs, startedAt: now };
+        const [createdRunId] = await db.add(RUNS, [run]);
+        if (!createdRunId) return error('تعذر بدء مجلس CWC', 500);
+        runId = createdRunId;
+      }
+
+      const runRecord = run!;
+      const progressBeforeWave = project.agentOutputs.length === 0 ? 10 : project.agentOutputs.length === 3 ? 34 : 66;
+      const working: ProjectRecord = {
+        ...project,
+        status: 'running',
+        progress: progressBeforeWave,
+        currentRunId: runId,
+        activeWave: nextWave,
+        waveLockAt: now,
+        lastRunError: undefined,
+        councilMode: 'vercel-openai-cwc',
+        updatedAt: now,
+        timeline: project.agentOutputs.length || project.timeline.some(item => item.label === 'بدأ مجلس CWC عبر Vercel')
+          ? project.timeline
+          : [...project.timeline, { at: now, label: 'بدأ مجلس CWC عبر Vercel', detail: 'تعمل التخصصات التسعة على ثلاث موجات حقيقية، وتحفظ كل موجة قبل الانتقال.' }]
+      };
+      await updateProject(ctx.params.id, working);
+
       try {
-        const context = await buildContext(preparing);
-        const council = buildDirectCouncil(preparing, context);
-        const score = calculateScore(council.outputs);
-        const completedAt = Date.now();
-        const finished: ProjectRecord = { ...preparing, status: 'review', progress: 100, currentWave: 3, agentOutputs: council.outputs, synthesis: council.synthesis, score, updatedAt: completedAt, timeline: [...preparing.timeline, { at: completedAt, label: 'اكتملت خطة الموقع', detail: `اكتملت الأدوار التسعة وخطة التصميم بدرجة ${score}/100، وبدأ تجهيز المعاينة المطابقة للفكرة.` }] };
-        await db.update(RUNS, [{ id: runId, record: { ...run, outputs: council.outputs, synthesis: council.synthesis, score, status: 'review', completedAt } }]);
-        return json({ project: await updateProject(ctx.params.id, finished), needsFinalize: false });
+        const context = await buildContext(working);
+        const result = await runVercelCwcWave({
+          wave: nextWave,
+          context,
+          previous: working.agentOutputs,
+          thinkingMode: modeToThinking(working.mode),
+          requestId: `${runId!}:wave:${nextWave}`
+        });
+        const outputs = [...working.agentOutputs, ...result.outputs];
+        const completed = nextWave === 3;
+        const score = completed ? calculateScore(outputs) : undefined;
+        const finishedAt = Date.now();
+        const next: ProjectRecord = {
+          ...working,
+          status: completed ? 'review' : 'running',
+          progress: completed ? 100 : nextWave === 1 ? 34 : 66,
+          currentWave: nextWave,
+          activeWave: undefined,
+          waveLockAt: undefined,
+          agentOutputs: outputs,
+          synthesis: completed ? result.synthesis : working.synthesis,
+          score: completed ? score : working.score,
+          lastRunError: undefined,
+          updatedAt: finishedAt,
+          timeline: [...working.timeline, {
+            at: finishedAt,
+            label: completed ? 'اكتملت الموجات الثلاث' : `اكتملت الموجة ${nextWave}`,
+            detail: completed
+              ? `اكتملت 9/9 مخرجات حقيقية بدرجة ${score}/100، وأصبح محتوى الموقع العام جاهزًا للبناء.`
+              : `حُفظت نتائج ${outputs.length}/9 وكلاء بنجاح قبل الانتقال للموجة التالية.`
+          }]
+        };
+        await db.update(RUNS, [{ id: runId!, record: { ...runRecord, outputs, synthesis: next.synthesis, score, status: completed ? 'review' : 'running', completedAt: completed ? finishedAt : undefined } }]);
+        return json({ project: await updateProject(ctx.params.id, next), needsContinue: !completed, needsFinalize: false });
       } catch (err) {
-        const details = err && typeof err === 'object' ? {
-          name: 'name' in err ? String((err as { name?: unknown }).name || '') : '',
-          message: 'message' in err ? String((err as { message?: unknown }).message || '') : '',
-          statusCode: 'statusCode' in err ? Number((err as { statusCode?: unknown }).statusCode || 0) : 0,
-          responseText: 'responseText' in err ? String((err as { responseText?: unknown }).responseText || '').slice(0, 500) : ''
-        } : { name: '', message: String(err || ''), statusCode: 0, responseText: '' };
-        console.error('design_council_failed_details', JSON.stringify(details));
-        const diagnostic = [details.statusCode ? `status ${details.statusCode}` : '', details.message, details.responseText].filter(Boolean).join(' | ').slice(0, 350);
-        const failed: ProjectRecord = { ...preparing, status: 'error', progress: 8, updatedAt: Date.now(), timeline: [...preparing.timeline, { at: Date.now(), label: 'تعذر مجلس نَسَق', detail: 'لم تُنشأ نتائج بديلة؛ أعد المحاولة عندما يتوفر مزود الذكاء.' }] };
+        const details = err && typeof err === 'object' ? err as { code?: string; message?: string; retryable?: boolean; status?: number } : {};
+        const failedAt = Date.now();
+        const failed: ProjectRecord = {
+          ...working,
+          status: 'error',
+          activeWave: undefined,
+          waveLockAt: undefined,
+          lastRunError: {
+            code: String(details.code || 'bridge_failed'),
+            message: String(details.message || 'تعذر تشغيل الموجة الحالية'),
+            retryable: Boolean(details.retryable),
+            wave: nextWave,
+            at: failedAt
+          },
+          updatedAt: failedAt,
+          timeline: [...working.timeline, {
+            at: failedAt,
+            label: `تعذرت الموجة ${nextWave}`,
+            detail: `النتائج السابقة محفوظة (${working.agentOutputs.length}/9). ${details.retryable ? 'يمكن استكمال التشغيل من نفس النقطة.' : 'راجع إعدادات الجسر ثم أعد المحاولة.'}`
+          }]
+        };
+        if (runId && run) await db.update(RUNS, [{ id: runId!, record: { ...runRecord, outputs: working.agentOutputs, status: 'error' } }]);
         await updateProject(ctx.params.id, failed);
-        return error(`تعذر إكمال مجلس الوكلاء الآن${diagnostic ? `: ${diagnostic}` : ''}`, 502);
+        return error(String(details.message || 'تعذر تشغيل موجة الوكلاء عبر Vercel'), Number(details.status) || 502);
       }
     }
   ],
 
   'POST /api/projects/:id/run-legacy': [
     requireAuth(),
-    async ctx => {
-      const project = await getOwnedProject(ctx.user!.userId, ctx.params.id);
-      if (!project) return error('المشروع غير موجود', 404);
-      const continuing = project.status === 'running' && Boolean(project.currentRunId) && project.agentOutputs.length < 9;
-      const now = Date.now();
-      let runId = project.currentRunId;
-      let run: RunRecord;
-      let working: ProjectRecord;
-      if (continuing && runId) {
-        const [existingRun] = await db.get<RunRecord>(RUNS, [runId]);
-        if (!existingRun) return error('سجل الجولة غير موجود', 409);
-        run = existingRun;
-        working = project;
-      } else {
-        run = { userId: project.userId, projectId: ctx.params.id, status: 'running', mode: project.mode, outputs: [], startedAt: now };
-        const [createdRunId] = await db.add(RUNS, [run]);
-        if (!createdRunId) return error('تعذر بدء الجولة', 500);
-        runId = createdRunId;
-        working = {
-          ...project,
-          status: 'running',
-          progress: 4,
-          currentWave: 0,
-          currentRunId: runId,
-          agentOutputs: [],
-          synthesis: undefined,
-          score: undefined,
-          updatedAt: now,
-          timeline: [...project.timeline, { at: now, label: 'بدأت الجولة', detail: 'تم تقسيم التنفيذ إلى موجات محفوظة لحماية الجودة والاتصال.' }]
-        };
-        await updateProject(ctx.params.id, working);
-      }
-      try {
-        const context = await buildContext(working);
-        const thinkingMode = modeToThinking(working.mode);
-        if (working.agentOutputs.length === 0) {
-          const prepared: ProjectRecord = { ...working, progress: 10, updatedAt: Date.now(), timeline: [...working.timeline, { at: Date.now(), label: 'اكتملت التهيئة', detail: `تم تحميل ${context.referenceEvidence.length} مرجع و${context.memories.length} ذاكرة معتمدة.` }] };
-          const wave = await runWave([0, 1, 2], context, [], thinkingMode);
-          working = { ...prepared, currentWave: 1, progress: 34, agentOutputs: wave, updatedAt: Date.now(), timeline: [...prepared.timeline, { at: Date.now(), label: 'الموجة الأولى', detail: 'اكتملت المواصفات والبحث والاستراتيجية وحُفظت النتائج.' }] };
-          await db.update(RUNS, [{ id: runId!, record: { ...run, outputs: wave, status: 'running' } }]);
-          return json({ project: await updateProject(ctx.params.id, working), needsContinue: true });
-        }
-        if (working.agentOutputs.length === 3) {
-          const wave = await runWave([3, 4, 5], context, working.agentOutputs, thinkingMode);
-          const outputs = [...working.agentOutputs, ...wave];
-          working = { ...working, currentWave: 2, progress: 66, agentOutputs: outputs, updatedAt: Date.now(), timeline: [...working.timeline, { at: Date.now(), label: 'الموجة الثانية', detail: 'اكتملت الذاكرة ومعمارية UX واتجاه UI وحُفظت النتائج.' }] };
-          await db.update(RUNS, [{ id: runId!, record: { ...run, outputs, status: 'running' } }]);
-          return json({ project: await updateProject(ctx.params.id, working), needsContinue: true });
-        }
-        if (working.agentOutputs.length === 6) {
-          const wave = await runWave([6, 7, 8], context, working.agentOutputs, thinkingMode);
-          const outputs = [...working.agentOutputs, ...wave];
-          working = { ...working, currentWave: 3, progress: 86, agentOutputs: outputs, updatedAt: Date.now(), timeline: [...working.timeline, { at: Date.now(), label: 'اكتملت مخرجات الوكلاء', detail: 'اكتملت 9/9 مخرجات وحُفظت قبل فحص القبول.' }] };
-          await db.update(RUNS, [{ id: runId!, record: { ...run, outputs, status: 'running' } }]);
-          return json({ project: await updateProject(ctx.params.id, working), needsContinue: true });
-        }
-        if (working.agentOutputs.length === 9) {
-          const improvement = await improveAcceptance(working, context, working.agentOutputs, thinkingMode);
-          working = {
-            ...working,
-            progress: 90,
-            agentOutputs: improvement.outputs,
-            acceptanceHistory: improvement.history,
-            updatedAt: Date.now(),
-            timeline: [...working.timeline, {
-              at: Date.now(),
-              label: improvement.rerunAgents.length ? 'تحسين درجة القبول' : 'درجة القبول مستوفاة',
-              detail: improvement.rerunAgents.length ? `أعيدت مراجعة ${improvement.rerunAgents.join(' و')} وانتقلت الدرجة من ${improvement.before} إلى ${improvement.after}/100.` : `النتيجة الأولية ${improvement.after}/100 وتجاوزت الهدف دون جولة إضافية.`
-            }]
-          };
-          await db.update(RUNS, [{ id: runId!, record: { ...run, outputs: improvement.outputs, status: 'finalizing' } }]);
-          return json({ project: await updateProject(ctx.params.id, working), needsFinalize: true });
-        }
-        return error('حالة الجولة غير متوقعة؛ افتح المشروع وأعد المحاولة', 409);
-      } catch (err) {
-        console.error('run_step_failed', err);
-        const failed: ProjectRecord = { ...working, status: 'error', updatedAt: Date.now(), timeline: [...working.timeline, { at: Date.now(), label: 'تعذرت الموجة الحالية', detail: 'النتائج السابقة محفوظة ويمكن استكمال الموجة دون بدء المشروع من الصفر.' }] };
-        await updateProject(ctx.params.id, failed);
-        return error('تعذر إكمال موجة الوكلاء', 502);
-      }
-    }
+    async () => error('تم إيقاف المسار القديم. استخدم مسار مجلس CWC عبر Vercel.', 410)
   ],
 
   'POST /api/projects/:id/finalize': [

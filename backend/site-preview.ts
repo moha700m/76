@@ -1,4 +1,5 @@
 import { ai } from '@appdeploy/sdk';
+import { generatePremiumSitePreview } from './premium-site-preview';
 
 export type SitePreviewProject = {
   name: string;
@@ -100,30 +101,8 @@ function buildAdaptivePreview(project: SitePreviewProject) {
 }
 
 export async function generateSitePreview(project: SitePreviewProject) {
-  const content = JSON.stringify({
-    project: { name: project.name, brief: project.brief, audience: project.audience, goal: project.goal, style: project.style },
-    synthesis: project.synthesis,
-    agentOutputs: (project.agentOutputs || []).map(item => ({ name:item.name, summary:item.summary, confidence:item.confidence, status:item.status })),
-    designDecision: project.synthesis
-  }).slice(0, 18000);
-  try {
-    const result = await ai.generate({
-      system: 'أنت مخرج فني ومطور واجهات عربي من مستوى عالمي. أنشئ ملف HTML واحدًا كاملًا لموقع عميل حقيقي، RTL وMobile First. أخرج HTML فقط دون markdown. استخدم CSS احترافيًا داخل الملف، واسمح برسومات SVG داخلية وزخارف CSS أصلية، ولا تستخدم JavaScript أو iframe أو مكتبات أو صورًا خارجية. يجب أن تبدو النتيجة مصممة خصيصًا لهذا المشروع، لا قالب SaaS عام ولا نسخة من هوية نَسَق. لا تنسخ نص فكرة المستخدم أو الموجز حرفيًا داخل Hero أو الأقسام؛ حوّل القرار النهائي إلى كتابة تسويقية جديدة ومحددة. لا تستخدم الخلفية الداكنة مع السماوي والبنفسجي إلا إذا طلبها الطابع البصري صراحة. استخرج لوحة الألوان والتباعد وشكل البطاقات والخطوط من بيانات المشروع والنظام التصميمي. نوّع التكوين: Hero غير تقليدي، عنصر بصري مميز، أقسام متفاوتة الإيقاع، مساحات بيضاء مدروسة، وحالات hover. لا تخترع أرقامًا أو شهادات أو عملاء أو عناوين أو وسائل تواصل أو مزايا غير موجودة. لا تعرض مصطلحات الوكلاء داخل موقع العميل. التزم بإمكانية الوصول والتباين والوضوح.',
-      prompt: 'حوّل القرار التالي إلى موقع عربي متكامل عالي الجودة يصلح لعرضه على عميل ودفعه لاتخاذ الإجراء الرئيسي. أنشئ تنقلًا واضحًا، Hero مخصصًا باسم المشروع ووعده، عنصرًا بصريًا فريدًا مبنيًا بـCSS أو SVG، أقسام خدمة أو منتج مرتبطة حرفيًا بالموجز، رحلة استخدام، دليلًا لا يتجاوز المعلومات المقدمة، دعوة إجراء، وتذييلًا. طبّق لوحة الألوان والمكونات الواردة في designSystem. ممنوع نسخ بنية أو ألوان نَسَق افتراضيًا، وممنوع استخدام عبارات عامة مثل حل رقمي أو أقسام تخدم القرار عندما توجد معلومات أكثر تحديدًا.\n\nبيانات المشروع:\n' + content,
-      maxTokens: 7600,
-      temperature: 0.32,
-      thinkingMode: 'DEEP'
-    });
-    const cleaned = sanitizeGeneratedHtml(result.text);
-    if (cleaned) return cleaned;
-    console.warn('site_preview_invalid_html_using_adaptive_preview');
-    return buildAdaptivePreview(project);
-  } catch (err) {
-    console.error('site_preview_generation_failed_using_adaptive_preview', err);
-    return buildAdaptivePreview(project);
-  }
+  return generatePremiumSitePreview(project, sanitizeGeneratedHtml);
 }
-
 export function buildDemoPreview() {
   return buildFallbackPreview({
     name: 'نَسَق',
