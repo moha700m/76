@@ -101,10 +101,20 @@ function buildAdaptivePreview(project: SitePreviewProject) {
 }
 
 export async function generateSitePreview(project: SitePreviewProject) {
-  // Build the preview directly and deterministically from the saved project data.
-  // The long AI HTML request (generatePremiumSitePreview) was the main source of finalize/preview
-  // 504s, so it is no longer used at this stage. The output stays safe, RTL, mobile-first and
-  // responsive. buildFallbackPreview / buildDemoPreview and the premium builder remain available.
+  // Design Compiler V1: build a richer preview (theme + section variants) from the saved project.
+  // Loaded via a guarded dynamic import so that ANY resolution/runtime issue degrades gracefully to
+  // the stable adaptive preview — the finalize/preview stability fixes are never put at risk, and no
+  // long AI request runs at this stage (still 504-free). buildFallbackPreview / buildDemoPreview and
+  // the premium builder remain available and untouched.
+  try {
+    const mod = await import('../src/design-compiler/render/render-page.ts');
+    const html = mod.renderPreviewFromProject(project as unknown as Parameters<typeof mod.renderPreviewFromProject>[0]);
+    if (typeof html === 'string' && html.length > 1200 && /<html[\s>]/i.test(html) && /<\/html>/i.test(html)) {
+      return html;
+    }
+  } catch {
+    // Fall through to the stable adaptive preview on any compiler error.
+  }
   return buildAdaptivePreview(project);
 }
 export function buildDemoPreview() {
