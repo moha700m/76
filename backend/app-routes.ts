@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'crypto';
 import { ai, db, error, json, requireAuth, secrets, storage, type RouterRoutes } from '@appdeploy/sdk';
 import { notifySubscribers } from './realtime-subscribers';
-import { runVercelCwcWave } from './vercel-agent-bridge';
+import { runVercelCwcSynthesis, runVercelCwcWave } from './vercel-agent-bridge';
 import { calculateScore, DESIGN_AGENTS, runDesignWave, synthesizeDesign, type AgentOutput, type ProjectContext, type ThinkingMode } from './design-agents';
 import { buildDemoPreview, generateSitePreview, htmlResponse } from './site-preview';
 import { expandProjectIdea, type ManagerBrief } from './project-manager';
@@ -251,7 +251,7 @@ async function finalizeProject(id: string, project: ProjectRecord) {
   const degradedAgents = preparing.agentOutputs.filter(item => item.status === 'degraded');
   if (degradedAgents.length) throw new Error(`تعذر اعتماد نتيجة تحتوي ${degradedAgents.length} مخرجات غير مكتملة`);
   const context = await buildFinalizeContext(preparing);
-  const synthesis = await synthesizeDesign(context, preparing.agentOutputs, 'DEEP');
+  const synthesis = await runVercelCwcSynthesis({ context, outputs: preparing.agentOutputs, thinkingMode: 'DEEP', requestId: `${preparing.currentRunId || id}:synthesis` });
   const score = calculateScore(preparing.agentOutputs);
   const completedAt = Date.now();
   const finished: ProjectRecord = {
@@ -457,11 +457,12 @@ export const appRoutes: RouterRoutes = {
       const project = await getOwnedProject(ctx.user!.userId, ctx.params.id);
       if (!project) return error('المشروع غير موجود', 404);
       if (project.agentOutputs.length === 9 && project.synthesis) return json({ project: await enrichProject(ctx.params.id, project), needsContinue: false, needsFinalize: false });
+      if (project.agentOutputs.length === 9) return json({ project: await enrichProject(ctx.params.id, project), needsContinue: false, needsFinalize: true });
       if (![0, 3, 6].includes(project.agentOutputs.length)) return error('حالة مخرجات الوكلاء غير صالحة للاستكمال', 409);
 
       const now = Date.now();
       const nextWave = (project.agentOutputs.length / 3 + 1) as 1 | 2 | 3;
-      const lockIsFresh = Boolean(project.activeWave && project.waveLockAt && now - project.waveLockAt < 90_000);
+      const lockIsFresh = Boolean(project.activeWave && project.waveLockAt && now - project.waveLockAt < 55_000);
       if (lockIsFresh) return error(`الموجة ${project.activeWave} تعمل حاليًا`, 409);
 
       let runId = project.currentRunId;
@@ -493,7 +494,7 @@ export const appRoutes: RouterRoutes = {
       await updateProject(ctx.params.id, working);
 
       try {
-        const context = await buildContext(working);
+        const context = nextWave === 3 ? await buildFinalizeContext(working) : await buildContext(working);
         const result = await runVercelCwcWave({
           wave: nextWave,
           context,
@@ -502,31 +503,31 @@ export const appRoutes: RouterRoutes = {
           requestId: `${runId!}:wave:${nextWave}`
         });
         const outputs = [...working.agentOutputs, ...result.outputs];
-        const completed = nextWave === 3;
-        const score = completed ? calculateScore(outputs) : undefined;
+        const completedAgents = nextWave === 3;
+        const score = completedAgents ? calculateScore(outputs) : undefined;
         const finishedAt = Date.now();
         const next: ProjectRecord = {
           ...working,
-          status: completed ? 'review' : 'running',
-          progress: completed ? 100 : nextWave === 1 ? 34 : 66,
+          status: 'running',
+          progress: completedAgents ? 88 : nextWave === 1 ? 34 : 66,
           currentWave: nextWave,
           activeWave: undefined,
           waveLockAt: undefined,
           agentOutputs: outputs,
-          synthesis: completed ? result.synthesis : working.synthesis,
-          score: completed ? score : working.score,
+          synthesis: working.synthesis,
+          score: completedAgents ? score : working.score,
           lastRunError: undefined,
           updatedAt: finishedAt,
           timeline: [...working.timeline, {
             at: finishedAt,
-            label: completed ? 'اكتملت الموجات الثلاث' : `اكتملت الموجة ${nextWave}`,
-            detail: completed
-              ? `اكتملت 9/9 مخرجات حقيقية بدرجة ${score}/100، وأصبح محتوى الموقع العام جاهزًا للبناء.`
+            label: completedAgents ? 'اكتملت الموجات الثلاث' : `اكتملت الموجة ${nextWave}`,
+            detail: completedAgents
+              ? `حُفظت 9/9 مخرجات حقيقية بدرجة ${score}/100. يبدأ الآن التجميع النهائي المستقل دون إعادة أي وكيل.`
               : `حُفظت نتائج ${outputs.length}/9 وكلاء بنجاح قبل الانتقال للموجة التالية.`
           }]
         };
-        await db.update(RUNS, [{ id: runId!, record: { ...runRecord, outputs, synthesis: next.synthesis, score, status: completed ? 'review' : 'running', completedAt: completed ? finishedAt : undefined } }]);
-        return json({ project: await updateProject(ctx.params.id, next), needsContinue: !completed, needsFinalize: false });
+        await db.update(RUNS, [{ id: runId!, record: { ...runRecord, outputs, score, status: 'running' } }]);
+        return json({ project: await updateProject(ctx.params.id, next), needsContinue: !completedAgents, needsFinalize: completedAgents });
       } catch (err) {
         const details = err && typeof err === 'object' ? err as { code?: string; message?: string; retryable?: boolean; status?: number } : {};
         const failedAt = Date.now();
