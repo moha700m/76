@@ -101,7 +101,11 @@ function buildAdaptivePreview(project: SitePreviewProject) {
 }
 
 export async function generateSitePreview(project: SitePreviewProject) {
-  return generatePremiumSitePreview(project, sanitizeGeneratedHtml);
+  // Build the preview directly and deterministically from the saved project data.
+  // The long AI HTML request (generatePremiumSitePreview) was the main source of finalize/preview
+  // 504s, so it is no longer used at this stage. The output stays safe, RTL, mobile-first and
+  // responsive. buildFallbackPreview / buildDemoPreview and the premium builder remain available.
+  return buildAdaptivePreview(project);
 }
 export function buildDemoPreview() {
   return buildFallbackPreview({

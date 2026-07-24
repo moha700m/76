@@ -54,6 +54,9 @@ type RunRecord = {
 const PROJECTS = 'design_projects';
 const RUNS = 'design_runs';
 const MEMORIES = 'design_memories';
+// Cooldown after progress:95 is persisted; a second finalize within this window returns 409
+// instead of issuing another finalize request.
+const FINALIZE_LOCK_MS = 75_000;
 
 function safeTokenEqual(left: string, right: string) {
   const a = Buffer.from(left);
@@ -99,7 +102,9 @@ async function enrichProject(id: string, project: ProjectRecord) {
 async function updateProject(id: string, project: ProjectRecord) {
   await db.update(PROJECTS, [{ id, record: project }]);
   const payload = await enrichProject(id, project);
-  await notifySubscribers('project', id, payload);
+  // A realtime / WebSocket failure must never fail or roll back a persisted project save,
+  // so finalize keeps its saved synthesis and progress even if notifying subscribers fails.
+  try { await notifySubscribers('project', id, payload); } catch (err) { console.error('notify_failed', err); }
   return payload;
 }
 
@@ -139,7 +144,8 @@ async function buildContext(project: ProjectRecord): Promise<ProjectContext> {
 }
 
 async function buildFinalizeContext(project: ProjectRecord): Promise<ProjectContext> {
-  const memories = await loadMemories(project.userId);
+  // Intentionally lightweight: no reference scraping and no memory loading, so the finalize /
+  // wave-3 stage stays fast and never triggers long upstream calls (a 504 source).
   return {
     name: project.name,
     brief: projectBriefForAgents(project),
@@ -148,7 +154,7 @@ async function buildFinalizeContext(project: ProjectRecord): Promise<ProjectCont
     style: project.style,
     references: project.references || [],
     referenceEvidence: [],
-    memories,
+    memories: [],
     feedback: project.feedback
   };
 }
@@ -238,20 +244,87 @@ async function improveAcceptance(project: ProjectRecord, context: ProjectContext
   return { outputs: improved, before, after: currentScore, rerunAgents: Array.from(new Set(rerunAgents)), history };
 }
 
+// Builds the final council synthesis LOCALLY from the nine SAVED agent outputs.
+// It never invents or replaces agent results: summaries / findings / decisions / deliverables come
+// straight from the stored outputs. Deterministic project-derived scaffolding (palette, pages,
+// journey, acceptance, publicContent) keeps the review screen and the preview populated without any
+// long upstream request that could time out (504).
+function buildStoredCouncilSynthesis(project: ProjectRecord): Record<string, unknown> {
+  const outputs = project.agentOutputs || [];
+  const summaries = outputs.map(item => item.summary).filter(Boolean);
+  const findings = Array.from(new Set(outputs.flatMap(item => item.findings || []))).slice(0, 12);
+  const decisions = Array.from(new Set(outputs.flatMap(item => item.decisions || []))).slice(0, 12);
+  const deliverables = outputs.map(item => item.deliverable).filter(Boolean);
+  const palette = paletteFromStyle(project.style);
+  const primaryJourney = ['فهم وعد المشروع', 'استكشاف العرض أو الخدمات', 'معرفة طريقة الاستخدام أو الشراء', 'اتخاذ الإجراء الرئيسي'];
+  const pages = [
+    { name: 'الرئيسية', purpose: `تقديم ${project.name} ووعده بوضوح`, sections: ['Hero مخصص', 'القيمة الرئيسية', 'الإجراء الرئيسي'] },
+    { name: 'العرض الأساسي', purpose: 'عرض المنتجات أو الخدمات المناسبة للموجز', sections: ['بطاقات مخصصة', 'تفاصيل مختصرة', 'مزايا مؤكدة'] },
+    { name: 'طريقة الاستخدام', purpose: 'شرح الرحلة من البداية حتى النتيجة', sections: ['خطوات واضحة', 'حالات الاستخدام', 'أسئلة متوقعة'] },
+    { name: 'بدء الطلب', purpose: `تحويل الزائر نحو ${project.goal}`, sections: ['دعوة إجراء', 'نموذج مختصر', 'تأكيد الخطوة التالية'] }
+  ];
+  const designSystem = {
+    palette,
+    typography: ['عنوان عربي بارز', 'نص عربي واضح'],
+    components: ['شريط تنقل', 'Hero مخصص', 'بطاقات محتوى', 'خطوات', 'زر إجراء', 'تذييل'],
+    motion: ['ظهور خفيف', 'Hover وظيفي', 'احترام reduced-motion']
+  };
+  const acceptanceCriteria = ['مطابقة الفكرة والطابع', 'توافق الجوال أولًا', 'هوية مختلفة عن نَسَق', 'محتوى عربي واضح', 'تباين جيد', 'رابط معاينة يعمل'];
+  const sectionSource = (summaries.length ? summaries : deliverables).slice(0, 5);
+  const sections = sectionSource.map((text, index) => ({
+    kicker: `محور ${index + 1}`,
+    title: pages[index % pages.length].name,
+    body: text,
+    items: (findings.length ? findings : decisions).slice(index * 2, index * 2 + 2)
+  }));
+  const publicContent = {
+    brandName: project.name,
+    navigation: ['الرئيسية', ...pages.slice(1, 3).map(page => page.name)],
+    hero: { eyebrow: project.audience, title: project.name, body: summaries[0] || project.brief, primaryCta: 'ابدأ الآن', secondaryCta: 'استكشف العرض' },
+    visualMotif: project.style,
+    sections,
+    closing: { title: project.goal, body: 'راجع المحتوى والهوية ثم اعتمد النسخة.', cta: 'ابدأ الطلب' },
+    footerLine: project.name
+  };
+  return {
+    executiveSummary: summaries[0] || `موقع عربي متجاوب يعرض فكرة ${project.name} ويقود ${project.audience} نحو ${project.goal} دون محتوى مختلق.`,
+    positioning: project.goal,
+    designDirection: `${project.style}. هوية خاصة بالمشروع ومختلفة بصريًا عن واجهة نَسَق.`,
+    primaryJourney,
+    pages,
+    designSystem,
+    conversionPlan: ['دعوة إجراء واحدة واضحة', 'تقديم القيمة قبل التفاصيل', 'تقليل الحقول والخطوات'],
+    risks: ['نقص المعلومات التفصيلية قد يتطلب تعديل المحتوى لاحقًا', 'عدم اختراع أسعار أو شهادات أو بيانات تواصل'],
+    acceptanceCriteria,
+    nextActions: ['بناء المعاينة الحية', 'مراجعة المحتوى والألوان', 'اعتماد النسخة أو طلب تعديل'],
+    summaries,
+    findings,
+    decisions,
+    deliverables,
+    publicContent,
+    source: 'stored-council'
+  };
+}
+
 async function finalizeProject(id: string, project: ProjectRecord) {
+  // Idempotent: if synthesis is already saved, never rebuild or re-run anything.
+  if (project.synthesis) return enrichProject(id, project);
+  const degradedAgents = project.agentOutputs.filter(item => item.status === 'degraded');
+  if (degradedAgents.length) throw new Error(`تعذر اعتماد نتيجة تحتوي ${degradedAgents.length} مخرجات غير مكتملة`);
+
   const hasFinalizingLog = project.timeline.some(item => item.label === 'تجميع النتيجة');
   const preparing: ProjectRecord = {
     ...project,
     status: 'running',
     progress: 95,
     updatedAt: Date.now(),
-    timeline: hasFinalizingLog ? project.timeline : [...project.timeline, { at: Date.now(), label: 'تجميع النتيجة', detail: 'المنسق النهائي يدمج مخرجات الوكلاء التسعة.' }]
+    timeline: hasFinalizingLog ? project.timeline : [...project.timeline, { at: Date.now(), label: 'تجميع النتيجة', detail: 'المنسق النهائي يدمج مخرجات الوكلاء التسعة المحفوظة محليًا.' }]
   };
+  // 1) Persist progress:95 first.
   await updateProject(id, preparing);
-  const degradedAgents = preparing.agentOutputs.filter(item => item.status === 'degraded');
-  if (degradedAgents.length) throw new Error(`تعذر اعتماد نتيجة تحتوي ${degradedAgents.length} مخرجات غير مكتملة`);
-  const context = await buildFinalizeContext(preparing);
-  const synthesis = await synthesizeDesign(context, preparing.agentOutputs, 'DEEP');
+
+  // 2) Build synthesis locally from the nine saved outputs — no long request, so no 504.
+  const synthesis = buildStoredCouncilSynthesis(preparing);
   const score = calculateScore(preparing.agentOutputs);
   const completedAt = Date.now();
   const finished: ProjectRecord = {
@@ -263,11 +336,20 @@ async function finalizeProject(id: string, project: ProjectRecord) {
     updatedAt: completedAt,
     timeline: [...preparing.timeline, { at: completedAt, label: 'جاهز للمراجعة', detail: `اكتملت الجولة بدرجة ${score}/100 وتحتاج قرارك البشري.` }]
   };
-  if (preparing.currentRunId) {
-    const [existingRun] = await db.get<RunRecord>(RUNS, [preparing.currentRunId]);
-    if (existingRun) await db.update(RUNS, [{ id: preparing.currentRunId, record: { ...existingRun, outputs: preparing.agentOutputs, synthesis, score, status: 'review', completedAt } }]);
+  // 3) Persist the finalized project FIRST (this call also emits the WebSocket update, guarded).
+  const saved = await updateProject(id, finished);
+
+  // 4) & 5) Only after the project is saved, sync the RunRecord. A RunRecord failure must never wipe
+  // synthesis or roll progress back, so it is isolated and swallowed here.
+  try {
+    if (preparing.currentRunId) {
+      const [existingRun] = await db.get<RunRecord>(RUNS, [preparing.currentRunId]);
+      if (existingRun) await db.update(RUNS, [{ id: preparing.currentRunId, record: { ...existingRun, outputs: preparing.agentOutputs, synthesis, score, status: 'review', completedAt } }]);
+    }
+  } catch (err) {
+    console.error('finalize_runrecord_failed', err);
   }
-  return updateProject(id, finished);
+  return saved;
 }
 
 export const appRoutes: RouterRoutes = {
@@ -457,11 +539,12 @@ export const appRoutes: RouterRoutes = {
       const project = await getOwnedProject(ctx.user!.userId, ctx.params.id);
       if (!project) return error('المشروع غير موجود', 404);
       if (project.agentOutputs.length === 9 && project.synthesis) return json({ project: await enrichProject(ctx.params.id, project), needsContinue: false, needsFinalize: false });
+      if (project.agentOutputs.length === 9) return json({ project: await enrichProject(ctx.params.id, project), needsContinue: false, needsFinalize: true });
       if (![0, 3, 6].includes(project.agentOutputs.length)) return error('حالة مخرجات الوكلاء غير صالحة للاستكمال', 409);
 
       const now = Date.now();
       const nextWave = (project.agentOutputs.length / 3 + 1) as 1 | 2 | 3;
-      const lockIsFresh = Boolean(project.activeWave && project.waveLockAt && now - project.waveLockAt < 90_000);
+      const lockIsFresh = Boolean(project.activeWave && project.waveLockAt && now - project.waveLockAt < 55_000);
       if (lockIsFresh) return error(`الموجة ${project.activeWave} تعمل حاليًا`, 409);
 
       let runId = project.currentRunId;
@@ -493,7 +576,7 @@ export const appRoutes: RouterRoutes = {
       await updateProject(ctx.params.id, working);
 
       try {
-        const context = await buildContext(working);
+        const context = nextWave === 3 ? await buildFinalizeContext(working) : await buildContext(working);
         const result = await runVercelCwcWave({
           wave: nextWave,
           context,
@@ -502,31 +585,31 @@ export const appRoutes: RouterRoutes = {
           requestId: `${runId!}:wave:${nextWave}`
         });
         const outputs = [...working.agentOutputs, ...result.outputs];
-        const completed = nextWave === 3;
-        const score = completed ? calculateScore(outputs) : undefined;
+        const completedAgents = nextWave === 3;
+        const score = completedAgents ? calculateScore(outputs) : undefined;
         const finishedAt = Date.now();
         const next: ProjectRecord = {
           ...working,
-          status: completed ? 'review' : 'running',
-          progress: completed ? 100 : nextWave === 1 ? 34 : 66,
+          status: 'running',
+          progress: completedAgents ? 88 : nextWave === 1 ? 34 : 66,
           currentWave: nextWave,
           activeWave: undefined,
           waveLockAt: undefined,
           agentOutputs: outputs,
-          synthesis: completed ? result.synthesis : working.synthesis,
-          score: completed ? score : working.score,
+          synthesis: working.synthesis,
+          score: completedAgents ? score : working.score,
           lastRunError: undefined,
           updatedAt: finishedAt,
           timeline: [...working.timeline, {
             at: finishedAt,
-            label: completed ? 'اكتملت الموجات الثلاث' : `اكتملت الموجة ${nextWave}`,
-            detail: completed
-              ? `اكتملت 9/9 مخرجات حقيقية بدرجة ${score}/100، وأصبح محتوى الموقع العام جاهزًا للبناء.`
+            label: completedAgents ? 'اكتملت الموجات الثلاث' : `اكتملت الموجة ${nextWave}`,
+            detail: completedAgents
+              ? `حُفظت 9/9 مخرجات حقيقية بدرجة ${score}/100. يبدأ الآن التجميع النهائي المستقل دون إعادة أي وكيل.`
               : `حُفظت نتائج ${outputs.length}/9 وكلاء بنجاح قبل الانتقال للموجة التالية.`
           }]
         };
-        await db.update(RUNS, [{ id: runId!, record: { ...runRecord, outputs, synthesis: next.synthesis, score, status: completed ? 'review' : 'running', completedAt: completed ? finishedAt : undefined } }]);
-        return json({ project: await updateProject(ctx.params.id, next), needsContinue: !completed, needsFinalize: false });
+        await db.update(RUNS, [{ id: runId!, record: { ...runRecord, outputs, score, status: 'running' } }]);
+        return json({ project: await updateProject(ctx.params.id, next), needsContinue: !completedAgents, needsFinalize: completedAgents });
       } catch (err) {
         const details = err && typeof err === 'object' ? err as { code?: string; message?: string; retryable?: boolean; status?: number } : {};
         const failedAt = Date.now();
@@ -568,7 +651,7 @@ export const appRoutes: RouterRoutes = {
       if (!project) return error('المشروع غير موجود', 404);
       if (project.synthesis) return json({ project: await enrichProject(ctx.params.id, project) });
       if (project.agentOutputs.length < 9) return error('لم تكتمل مخرجات الوكلاء التسعة بعد', 409);
-      if (project.progress === 95 && Date.now() - project.updatedAt < 15000) return error('المنسق النهائي يعمل حاليًا', 409);
+      if (project.progress === 95 && Date.now() - project.updatedAt < FINALIZE_LOCK_MS) return error('المنسق النهائي يعمل حاليًا', 409);
       try {
         return json({ project: await finalizeProject(ctx.params.id, project) });
       } catch (err) {

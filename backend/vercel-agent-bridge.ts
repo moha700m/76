@@ -1,11 +1,19 @@
 import { secrets } from '@appdeploy/sdk';
 import { DESIGN_AGENTS, type AgentOutput, type ProjectContext, type ThinkingMode } from './design-agents';
 
-const BRIDGE_URL = 'https://marsad-tisaa-pro-git-agent-sync-appde-a62057-moha700ms-projects.vercel.app/api/agent-bridge';
+const DEFAULT_BRIDGE_BASE_URL = 'https://myagentstore.pro';
+
+function bridgeBaseUrl(): string {
+  const configured = String(process.env.NASQ_AGENT_BRIDGE_URL || '').trim();
+  return (configured || DEFAULT_BRIDGE_BASE_URL).replace(/\/+$/, '');
+}
+
+type BridgeAction = 'wave' | 'wave3' | 'synthesis';
 
 type BridgeResponse = {
   ok?: boolean;
   wave?: number;
+  needsFinalize?: boolean;
   outputs?: AgentOutput[];
   synthesis?: Record<string, unknown>;
   error?: string;
@@ -28,16 +36,36 @@ export class VercelAgentBridgeError extends Error {
   }
 }
 
-function compactPrevious(outputs: AgentOutput[]) {
+function compactPrevious(outputs: AgentOutput[], concise = false) {
   return outputs.map(item => ({
     agentId: item.agentId,
     name: item.name,
-    summary: item.summary,
-    findings: item.findings.slice(0, 5),
-    decisions: item.decisions.slice(0, 4),
-    deliverable: item.deliverable,
+    summary: item.summary.slice(0, concise ? 650 : 1000),
+    findings: item.findings.slice(0, concise ? 3 : 5).map(value => value.slice(0, concise ? 360 : 600)),
+    decisions: item.decisions.slice(0, concise ? 3 : 4).map(value => value.slice(0, concise ? 360 : 600)),
+    deliverable: item.deliverable.slice(0, concise ? 700 : 1200),
     confidence: item.confidence
   }));
+}
+
+function projectPayload(context: ProjectContext, concise = false) {
+  return {
+    name: context.name,
+    brief: context.brief.slice(0, concise ? 4200 : 7000),
+    audience: context.audience.slice(0, 900),
+    goal: context.goal.slice(0, 900),
+    style: context.style.slice(0, 900),
+    references: context.references.slice(0, concise ? 3 : 5),
+    feedback: (context.feedback || '').slice(0, concise ? 700 : 2000),
+    evidence: context.referenceEvidence.slice(0, concise ? 1 : 3).map(item => ({
+      title: item.title,
+      excerpt: item.text.slice(0, concise ? 1400 : 5000)
+    })),
+    memories: context.memories.slice(0, concise ? 4 : 8).map(item => ({
+      title: item.title,
+      content: item.content.slice(0, concise ? 900 : 3500)
+    }))
+  };
 }
 
 function validateOutputs(wave: number, outputs: unknown): AgentOutput[] {
@@ -64,69 +92,102 @@ function validateOutputs(wave: number, outputs: unknown): AgentOutput[] {
   });
 }
 
+async function readBridgeSecrets() {
+  try {
+    const [bridgeSecret, protectionBypass] = await Promise.all([
+      secrets.readSecret('NASQ_AGENT_BRIDGE_SECRET'),
+      secrets.readSecret('VERCEL_AUTOMATION_BYPASS_SECRET')
+    ]);
+    return { bridgeSecret, protectionBypass };
+  } catch {
+    throw new VercelAgentBridgeError('أسرار جسر الوكلاء أو تجاوز حماية Vercel غير مضبوطة داخل AppDeploy', { code: 'bridge_secret_missing', status: 503 });
+  }
+}
+
+async function requestBridge(action: BridgeAction, body: Record<string, unknown>, requestId: string, timeoutMs: number) {
+  const { bridgeSecret, protectionBypass } = await readBridgeSecrets();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${bridgeBaseUrl()}/api/agent-bridge`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${bridgeSecret}`,
+        'content-type': 'application/json',
+        'x-vercel-protection-bypass': protectionBypass,
+        'x-nasq-request-id': requestId
+      },
+      body: JSON.stringify({ action, ...body }),
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({})) as BridgeResponse;
+    if (!response.ok) {
+      throw new VercelAgentBridgeError(data.message || 'تعذر تشغيل طلب الوكلاء عبر Vercel', {
+        code: data.error || 'bridge_request_failed',
+        retryable: Boolean(data.retryable) || response.status === 429 || response.status >= 500,
+        status: response.status
+      });
+    }
+    return data;
+  } catch (error) {
+    if (error instanceof VercelAgentBridgeError) throw error;
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new VercelAgentBridgeError('انتهت مهلة اتصال جسر الوكلاء، والنتائج المحفوظة لم تتغير', { code: 'bridge_timeout', retryable: true, status: 504 });
+    }
+    throw new VercelAgentBridgeError('تعذر الاتصال بجسر الوكلاء، والنتائج المحفوظة لم تتغير', { code: 'bridge_network_error', retryable: true });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function runVercelCwcWave(options: {
   wave: 1 | 2 | 3;
   context: ProjectContext;
   previous: AgentOutput[];
   thinkingMode: ThinkingMode;
   requestId: string;
-}): Promise<{ outputs: AgentOutput[]; synthesis?: Record<string, unknown> }> {
-  let bridgeSecret = '';
-  try {
-    bridgeSecret = await secrets.readSecret('NASQ_AGENT_BRIDGE_SECRET');
-  } catch {
-    throw new VercelAgentBridgeError('سر جسر الوكلاء غير مضبوط داخل AppDeploy', { code: 'bridge_secret_missing', status: 503 });
-  }
+}): Promise<{ outputs: AgentOutput[]; needsFinalize: boolean }> {
+  const splitWave3 = options.wave === 3;
+  const data = await requestBridge(
+    splitWave3 ? 'wave3' : 'wave',
+    {
+      wave: options.wave,
+      mode: splitWave3 ? 'economy' : options.thinkingMode === 'DEEP' ? 'deep' : 'balanced',
+      requestId: options.requestId,
+      project: projectPayload(options.context, splitWave3),
+      previousOutputs: compactPrevious(options.previous, splitWave3)
+    },
+    options.requestId,
+    splitWave3 ? 48_000 : 54_000
+  );
+  return {
+    outputs: validateOutputs(options.wave, data.outputs),
+    needsFinalize: splitWave3 ? data.needsFinalize !== false : false
+  };
+}
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 58_000);
-  try {
-    const response = await fetch(BRIDGE_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${bridgeSecret}`,
-        'content-type': 'application/json',
-        'x-nasq-request-id': options.requestId
-      },
-      body: JSON.stringify({
-        wave: options.wave,
-        mode: options.thinkingMode === 'DEEP' ? 'deep' : 'balanced',
-        requestId: options.requestId,
-        project: {
-          name: options.context.name,
-          brief: options.context.brief,
-          audience: options.context.audience,
-          goal: options.context.goal,
-          style: options.context.style,
-          references: options.context.references,
-          feedback: options.context.feedback || '',
-          evidence: options.context.referenceEvidence.map(item => ({ title: item.title, excerpt: item.text.slice(0, 5000) })),
-          memories: options.context.memories
-        },
-        previousOutputs: compactPrevious(options.previous)
-      }),
-      signal: controller.signal
-    });
-    const data = await response.json().catch(() => ({})) as BridgeResponse;
-    if (!response.ok) {
-      throw new VercelAgentBridgeError(data.message || 'تعذر تشغيل موجة الوكلاء عبر Vercel', {
-        code: data.error || 'bridge_request_failed',
-        retryable: Boolean(data.retryable) || response.status === 429 || response.status >= 500,
-        status: response.status
-      });
-    }
-    const outputs = validateOutputs(options.wave, data.outputs);
-    if (options.wave === 3 && (!data.synthesis || typeof data.synthesis !== 'object')) {
-      throw new VercelAgentBridgeError('لم يصل التجميع النهائي من الموجة الثالثة', { code: 'missing_synthesis', retryable: true });
-    }
-    return { outputs, synthesis: data.synthesis };
-  } catch (error) {
-    if (error instanceof VercelAgentBridgeError) throw error;
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new VercelAgentBridgeError('انتهت مهلة اتصال موجة الوكلاء، والنتائج السابقة محفوظة', { code: 'bridge_timeout', retryable: true, status: 504 });
-    }
-    throw new VercelAgentBridgeError('تعذر الاتصال بجسر الوكلاء، والنتائج السابقة محفوظة', { code: 'bridge_network_error', retryable: true });
-  } finally {
-    clearTimeout(timeout);
+export async function runVercelCwcSynthesis(options: {
+  context: ProjectContext;
+  outputs: AgentOutput[];
+  thinkingMode: ThinkingMode;
+  requestId: string;
+}): Promise<Record<string, unknown>> {
+  if (options.outputs.length !== 9) {
+    throw new VercelAgentBridgeError('التجميع النهائي يتطلب مخرجات 9/9', { code: 'invalid_synthesis_input', status: 409 });
   }
+  const data = await requestBridge(
+    'synthesis',
+    {
+      mode: options.thinkingMode === 'DEEP' ? 'deep' : 'balanced',
+      requestId: options.requestId,
+      project: projectPayload(options.context, true),
+      previousOutputs: compactPrevious(options.outputs, true)
+    },
+    options.requestId,
+    50_000
+  );
+  if (!data.synthesis || typeof data.synthesis !== 'object') {
+    throw new VercelAgentBridgeError('لم يصل التجميع النهائي من Vercel', { code: 'missing_synthesis', retryable: true });
+  }
+  return data.synthesis;
 }
