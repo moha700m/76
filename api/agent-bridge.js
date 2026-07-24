@@ -2,6 +2,12 @@ import { timingSafeEqual } from 'node:crypto';
 import { json, methodNotAllowed, readJson } from './_lib/http.js';
 import { consumeRateLimit } from './_lib/rate-limit.js';
 import { AgentBridgeError, callOpenAIWave, validateWaveRequest } from './_lib/nasq-agent-bridge.js';
+import {
+  callOpenAIWave3,
+  validateWave3Request,
+  callOpenAISynthesis,
+  validateSynthesisRequest
+} from './_lib/nasq-wave3-split.js';
 
 export const config = { maxDuration: 60 };
 
@@ -21,6 +27,63 @@ function authorized(req) {
   return Boolean(expected) && safeEqual(bearer(req), expected);
 }
 
+const ACTIONS = {
+  wave: {
+    scope: 'nasq-agent-bridge',
+    max: 60,
+    maxBytes: 750_000,
+    async run(body) {
+      const payload = validateWaveRequest(body);
+      const result = await callOpenAIWave(payload);
+      return {
+        ok: true,
+        wave: payload.wave,
+        outputs: result.outputs,
+        synthesis: result.synthesis,
+        model: result.model,
+        usage: result.usage
+      };
+    }
+  },
+  wave3: {
+    scope: 'nasq-agent-wave3',
+    max: 60,
+    maxBytes: 600_000,
+    async run(body) {
+      const payload = validateWave3Request(body);
+      const result = await callOpenAIWave3(payload);
+      return {
+        ok: true,
+        wave: 3,
+        needsFinalize: true,
+        outputs: result.outputs,
+        model: result.model,
+        usage: result.usage
+      };
+    }
+  },
+  synthesis: {
+    scope: 'nasq-agent-synthesis',
+    max: 30,
+    maxBytes: 750_000,
+    async run(body) {
+      const payload = validateSynthesisRequest(body);
+      const result = await callOpenAISynthesis(payload);
+      return {
+        ok: true,
+        synthesis: result.synthesis,
+        model: result.model,
+        usage: result.usage
+      };
+    }
+  }
+};
+
+function resolveAction(value) {
+  const key = String(value || 'wave').trim().toLowerCase();
+  return ACTIONS[key] ? key : null;
+}
+
 export default async function handler(req, res) {
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('cache-control', 'no-store');
@@ -29,6 +92,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       ok: true,
       service: 'nasq-agent-bridge',
+      actions: Object.keys(ACTIONS),
       authenticated: authorized(req),
       configured: authorized(req) ? Boolean(process.env.OPENAI_API_KEY && process.env.NASQ_AGENT_BRIDGE_SECRET) : undefined
     });
@@ -36,22 +100,30 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, ['GET', 'POST']);
   if (!process.env.NASQ_AGENT_BRIDGE_SECRET) return json(res, 503, { error: 'bridge_not_configured' });
   if (!authorized(req)) return json(res, 401, { error: 'unauthorized' });
-  if (!consumeRateLimit(req, res, { scope: 'nasq-agent-bridge', max: 60, windowMs: 60_000 })) {
+
+  let body;
+  try {
+    body = await readJson(req, { maxBytes: 750_000 });
+  } catch (error) {
+    if (error instanceof AgentBridgeError) {
+      return json(res, error.status, { error: error.code, message: error.message, retryable: error.retryable });
+    }
+    return json(res, 400, { error: 'invalid_body', message: 'تعذر قراءة جسم الطلب', retryable: false });
+  }
+
+  const actionKey = resolveAction(body?.action);
+  if (!actionKey) {
+    return json(res, 400, { error: 'invalid_action', message: 'action غير مدعوم', retryable: false });
+  }
+  const action = ACTIONS[actionKey];
+
+  if (!consumeRateLimit(req, res, { scope: action.scope, max: action.max, windowMs: 60_000 })) {
     return json(res, 429, { error: 'rate_limited', retryable: true });
   }
 
   try {
-    const body = await readJson(req, { maxBytes: 750_000 });
-    const payload = validateWaveRequest(body);
-    const result = await callOpenAIWave(payload);
-    return json(res, 200, {
-      ok: true,
-      wave: payload.wave,
-      outputs: result.outputs,
-      synthesis: result.synthesis,
-      model: result.model,
-      usage: result.usage
-    });
+    const result = await action.run(body);
+    return json(res, 200, result);
   } catch (error) {
     if (error instanceof AgentBridgeError) {
       return json(res, error.status, {
@@ -61,7 +133,7 @@ export default async function handler(req, res) {
         providerStatus: error.providerStatus || undefined
       });
     }
-    console.error('nasq_agent_bridge_unexpected', error instanceof Error ? error.name : 'unknown');
-    return json(res, 500, { error: 'internal_error', message: 'تعذر تشغيل الموجة', retryable: false });
+    console.error('nasq_agent_bridge_unexpected', actionKey, error instanceof Error ? error.name : 'unknown');
+    return json(res, 500, { error: 'internal_error', message: 'تعذر تنفيذ طلب الوكلاء', retryable: false });
   }
 }
