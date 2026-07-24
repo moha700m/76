@@ -1,0 +1,1 @@
+Put FIX-AND-CONTINUE-NASQ-BRIDGE.cmd inside the NASQ-Agent-Bridge-Installer folder or anywhere inside the repository, then double-click it. It repairs api.put, runs npm checks, commits, and pushes only to agent/sync-appdeploy-live-fix.

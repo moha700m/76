@@ -1,0 +1,4 @@
+  'POST /api/projects/:id/run-legacy': [
+    requireAuth(),
+    async () => error('تم إيقاف المسار القديم. استخدم مسار مجلس CWC عبر Vercel.', 410)
+  ],
