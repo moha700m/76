@@ -34,6 +34,25 @@ export function previewKey(project) {
   return `${project.id}:${project.currentRunId || 'saved'}`;
 }
 
+// Merge a freshly re-read saved snapshot onto the current project WITHOUT losing forward progress.
+// A late or stale re-read (e.g. a snapshot taken before the preview was persisted) must never wipe
+// a synthesis or previewPath we already have, nor roll progress/status backwards.
+export function mergeSavedSnapshot(current, snapshot) {
+  if (!snapshot) return current;
+  if (!current) return snapshot;
+  const currentProgress = Number(current.progress) || 0;
+  const snapshotProgress = Number(snapshot.progress) || 0;
+  return {
+    ...current,
+    ...snapshot,
+    synthesis: snapshot.synthesis || current.synthesis,
+    previewPath: snapshot.previewPath || current.previewPath,
+    progress: Math.max(currentProgress, snapshotProgress),
+    // Never downgrade status to an older one when the snapshot is behind the current project.
+    status: snapshotProgress >= currentProgress ? snapshot.status : current.status
+  };
+}
+
 // Bounded polling that re-reads the saved project until finalized or the budget elapses.
 // Injected deps make it fully testable: fetchSnapshot(id) -> project|null, sleep(ms), now().
 export async function pollUntilFinalized(projectId, deps) {
@@ -93,6 +112,6 @@ export async function reconcileAfterWaves(afterWaves, deps) {
 
   // Mandatory final re-read so previewPath / progress / status reflect saved truth.
   const finalSnapshot = await fetchSnapshot(project.id);
-  if (finalSnapshot) { project = finalSnapshot; onProject(finalSnapshot); }
+  if (finalSnapshot) { project = mergeSavedSnapshot(project, finalSnapshot); onProject(project); }
   return project;
 }

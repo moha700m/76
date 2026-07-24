@@ -7,7 +7,8 @@ import {
   previewKey,
   isConflictOrOffline,
   pollUntilFinalized,
-  reconcileAfterWaves
+  reconcileAfterWaves,
+  mergeSavedSnapshot
 } from '../../src/finalize-orchestration.mjs';
 
 function project(overrides = {}) {
@@ -122,4 +123,49 @@ test('preview build conflict re-reads saved project instead of failing', async (
     onProject: () => {}
   });
   assert.equal(result.previewPath, '#/preview/recovered');
+});
+
+
+test('mergeSavedSnapshot keeps a freshly built previewPath when a stale re-read lacks it', () => {
+  const withPreview = project({ agents: 9, synthesis: { a: 1 }, progress: 100, status: 'review', previewPath: '#/preview/new' });
+  const stale = project({ agents: 9, synthesis: { a: 1 }, progress: 100, status: 'review' }); // no previewPath
+  const merged = mergeSavedSnapshot(withPreview, stale);
+  assert.equal(merged.previewPath, '#/preview/new', 'a stale snapshot must not wipe the built previewPath');
+  assert.ok(merged.synthesis, 'synthesis preserved');
+});
+
+test('mergeSavedSnapshot never rolls progress or status backwards', () => {
+  const current = project({ agents: 9, synthesis: { a: 1 }, progress: 100, status: 'review', previewPath: '#/preview/x' });
+  const behind = project({ agents: 9, synthesis: null, progress: 88, status: 'running' });
+  const merged = mergeSavedSnapshot(current, behind);
+  assert.equal(merged.progress, 100, 'progress must be the max, never lowered');
+  assert.equal(merged.status, 'review', 'status must not downgrade to an older, less-advanced state');
+  assert.equal(merged.previewPath, '#/preview/x', 'previewPath preserved');
+  assert.ok(merged.synthesis, 'synthesis preserved against a null snapshot');
+});
+
+test('mergeSavedSnapshot adopts a more-advanced snapshot status and progress', () => {
+  const current = project({ agents: 9, synthesis: null, progress: 88, status: 'running' });
+  const ahead = project({ agents: 9, synthesis: { a: 1 }, progress: 100, status: 'review', previewPath: '#/preview/y' });
+  const merged = mergeSavedSnapshot(current, ahead);
+  assert.equal(merged.progress, 100);
+  assert.equal(merged.status, 'review');
+  assert.equal(merged.previewPath, '#/preview/y');
+});
+
+test('reconcile: a stale final re-read does NOT wipe the previewPath returned by site-preview', async () => {
+  const finalNoPreview = finalized();                                   // 9/9, synthesis, progress 100, no preview
+  const staleNoPreview = finalized();                                   // late snapshot, still no previewPath
+  const built = { ...finalNoPreview, previewPath: '#/preview/built' };
+  let buildCalls = 0;
+  const result = await reconcileAfterWaves(finalNoPreview, {
+    fetchSnapshot: async () => staleNoPreview,   // every re-read is stale (missing the just-built preview)
+    buildPreview: async () => { buildCalls++; return built; },
+    sleep: async () => {},
+    now: () => Date.now(),
+    onProject: () => {}
+  });
+  assert.equal(buildCalls, 1, 'preview built exactly once');
+  assert.equal(result.previewPath, '#/preview/built', 'built previewPath survives a stale final re-read');
+  assert.equal(result.progress, 100);
 });

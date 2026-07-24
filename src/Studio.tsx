@@ -129,6 +129,23 @@ async function pollUntilFinalized(projectId: string, onProject: (project: Projec
   return latest;
 }
 
+// Merge a freshly re-read saved snapshot WITHOUT losing forward progress: a stale snapshot
+// (read before the preview was saved) must never wipe a synthesis / previewPath we already have,
+// nor roll progress or status backwards. Mirrors mergeSavedSnapshot in finalize-orchestration.mjs.
+function mergeSavedSnapshot(current: Project, snapshot: Project | null): Project {
+  if (!snapshot) return current;
+  const currentProgress = Number(current.progress) || 0;
+  const snapshotProgress = Number(snapshot.progress) || 0;
+  return {
+    ...current,
+    ...snapshot,
+    synthesis: snapshot.synthesis || current.synthesis,
+    previewPath: snapshot.previewPath || current.previewPath,
+    progress: Math.max(currentProgress, snapshotProgress),
+    status: snapshotProgress >= currentProgress ? snapshot.status : current.status
+  };
+}
+
 const agentBlueprints = [
   ['brief-analyst', 'محلل الموجز', 'تحويل الطلب إلى مواصفات', 'How We Claude Code', 'حوّل الطلب إلى أهداف واضحة ومعايير قبول قابلة للفحص.'],
   ['evidence-researcher', 'باحث الأدلة', 'السوق والمنافسون والمراجع', 'Research Desk', 'حلل المراجع وحدد ما يثق به الجمهور وما يجب تجنبه.'],
@@ -376,7 +393,7 @@ safeLog('pipeline.waves.done', completed);
 // re-read the saved project and poll (409 / dropped responses mean "wait then re-read").
 if (completed.agentOutputs.length === 9 && (!completed.synthesis || completed.progress !== 100)) {
 const snapshot = await fetchProjectSnapshot(completed.id);
-if (snapshot) { completed = snapshot; syncProject(snapshot); }
+if (snapshot) { completed = mergeSavedSnapshot(completed, snapshot); syncProject(completed); }
 if (!(completed.synthesis && completed.progress === 100)) {
 setManagerStatus('اكتملت 9/9، ويجري تجميع النتيجة النهائية في طلب مستقل. ننتظر حفظ النتيجة دون إعادة أي وكيل...');
 const finalized = await pollUntilFinalized(completed.id, syncProject);
@@ -396,7 +413,7 @@ safeLog('pipeline.preview.built', completed);
 } catch (previewError) {
 // A conflict / dropped response does not mean failure: re-read the saved project.
 const snapshot = await fetchProjectSnapshot(completed.id);
-if (snapshot?.previewPath) { completed = snapshot; }
+if (snapshot?.previewPath) { completed = mergeSavedSnapshot(completed, snapshot); }
 else {
 sitePreviewAttemptRef.current.delete(previewKey);
 setManagerStatus('اكتملت نتيجة الوكلاء. تعذر إنشاء المعاينة تلقائيًا ويمكن بناؤها من داخل المشروع.');
@@ -407,7 +424,7 @@ safeLog('pipeline.preview.deferred', completed);
 
 // Final mandatory re-read so previewPath / progress / status are the saved truth, then confirm visibility.
 const finalSnapshot = await fetchProjectSnapshot(completed.id);
-if (finalSnapshot) completed = finalSnapshot;
+if (finalSnapshot) completed = mergeSavedSnapshot(completed, finalSnapshot);
 if (completed.previewPath) setManagerStatus('اكتمل المشروع: الخطة والمعاينة الحية المطابقة للفكرة ورابط المشاركة جاهزة.');
 syncProject(completed);
 safeLog('pipeline.done', completed);
