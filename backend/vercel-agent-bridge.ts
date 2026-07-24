@@ -1,11 +1,19 @@
 import { secrets } from '@appdeploy/sdk';
 import { DESIGN_AGENTS, type AgentOutput, type ProjectContext, type ThinkingMode } from './design-agents';
 
-const BRIDGE_BASE_URL = 'https://marsad-tisaa-pro-git-agent-sync-appde-a62057-moha700ms-projects.vercel.app';
+const DEFAULT_BRIDGE_BASE_URL = 'https://myagentstore.pro';
+
+function bridgeBaseUrl(): string {
+  const configured = String(process.env.NASQ_AGENT_BRIDGE_URL || '').trim();
+  return (configured || DEFAULT_BRIDGE_BASE_URL).replace(/\/+$/, '');
+}
+
+type BridgeAction = 'wave' | 'wave3' | 'synthesis';
 
 type BridgeResponse = {
   ok?: boolean;
   wave?: number;
+  needsFinalize?: boolean;
   outputs?: AgentOutput[];
   synthesis?: Record<string, unknown>;
   error?: string;
@@ -96,12 +104,12 @@ async function readBridgeSecrets() {
   }
 }
 
-async function requestBridge(path: string, body: Record<string, unknown>, requestId: string, timeoutMs: number) {
+async function requestBridge(action: BridgeAction, body: Record<string, unknown>, requestId: string, timeoutMs: number) {
   const { bridgeSecret, protectionBypass } = await readBridgeSecrets();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${BRIDGE_BASE_URL}${path}`, {
+    const response = await fetch(`${bridgeBaseUrl()}/api/agent-bridge`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${bridgeSecret}`,
@@ -109,7 +117,7 @@ async function requestBridge(path: string, body: Record<string, unknown>, reques
         'x-vercel-protection-bypass': protectionBypass,
         'x-nasq-request-id': requestId
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ action, ...body }),
       signal: controller.signal
     });
     const data = await response.json().catch(() => ({})) as BridgeResponse;
@@ -138,10 +146,10 @@ export async function runVercelCwcWave(options: {
   previous: AgentOutput[];
   thinkingMode: ThinkingMode;
   requestId: string;
-}): Promise<{ outputs: AgentOutput[] }> {
+}): Promise<{ outputs: AgentOutput[]; needsFinalize: boolean }> {
   const splitWave3 = options.wave === 3;
   const data = await requestBridge(
-    splitWave3 ? '/api/agent-wave3' : '/api/agent-bridge',
+    splitWave3 ? 'wave3' : 'wave',
     {
       wave: options.wave,
       mode: splitWave3 ? 'economy' : options.thinkingMode === 'DEEP' ? 'deep' : 'balanced',
@@ -152,7 +160,10 @@ export async function runVercelCwcWave(options: {
     options.requestId,
     splitWave3 ? 48_000 : 54_000
   );
-  return { outputs: validateOutputs(options.wave, data.outputs) };
+  return {
+    outputs: validateOutputs(options.wave, data.outputs),
+    needsFinalize: splitWave3 ? data.needsFinalize !== false : false
+  };
 }
 
 export async function runVercelCwcSynthesis(options: {
@@ -165,7 +176,7 @@ export async function runVercelCwcSynthesis(options: {
     throw new VercelAgentBridgeError('التجميع النهائي يتطلب مخرجات 9/9', { code: 'invalid_synthesis_input', status: 409 });
   }
   const data = await requestBridge(
-    '/api/agent-synthesis',
+    'synthesis',
     {
       mode: options.thinkingMode === 'DEEP' ? 'deep' : 'balanced',
       requestId: options.requestId,
